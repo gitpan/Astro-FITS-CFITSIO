@@ -1208,7 +1208,6 @@ for ($ii = 0; $ii < $nrows; $ii++) {
 $bitpix=16;
 $naxis=0;
 $filename = '!t1q2s3v5.tmp';
-
 ffinit($tmpfptr,$filename,$status);
 print "Create temporary file: ffinit status = $status\n";
 

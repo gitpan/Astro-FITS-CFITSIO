@@ -23,7 +23,7 @@ BEGIN {
 	pre_test('Loading'); # get this in before 'use Astro::FITS::CFISTIO'
 }
 
-use Astro::FITS::CFITSIO qw( :shortnames :constants );
+use Astro::FITS::CFITSIO qw( :shortnames :constants PerlyUnpacking );
 $loaded = 1;
 post_test($loaded);
 
@@ -406,6 +406,64 @@ for ($ii=0;$ii<10;$ii++) {
 	ffopen($fptr,$filename,READWRITE,$status);
 }
 post_test($status == 0);
+
+{
+  # try assigning the filehandle elsewhere and seeing if it
+  # still works
+  pre_test("filehandle assign" );
+  my $tfptr = $fptr;
+  $tfptr->file_name( my $fname, $status );
+  post_test( $status == 0 and $fname eq $filename );
+
+  # this should cause $fptr to indicate it has been closed.
+  pre_test( "filehandle assign close" );
+  $tfptr->close_file( $status );
+  post_test( $status == 0 and $fptr->_is_open == 0 );
+
+  # reopen on fptr.  this should not call DESTROY on anything, as
+  # tfptr should still point at the original file handle
+  pre_test( "filehandle assign pass" );
+  ffopen($fptr,$filename,READWRITE,$status);
+  post_test( $status == 0 && $tfptr->_is_open == 0);
+
+  # now, assign $fptr to $tfptr (DESTROYING $tfptr) and let $tfptr go
+  # out of scope. this shouldn't destroy anything and thus shouldn't
+  # affect $fptr
+  pre_test( "filehandle assign" );
+  $tfptr = $fptr;
+  post_test( $status == 0 && $tfptr->_is_open == 1);
+}
+
+# we should still be able to do this.
+pre_test("post assign DESTROY check");
+$fptr->movabs_hdu(1,undef,$status);
+post_test( $status == 0 );
+
+pre_test('PerlyUnpacking set');
+PerlyUnpacking(0);
+post_test( PerlyUnpacking(-1) == PerlyUnpacking() &&
+	   PerlyUnpacking(-1) == 0 );
+PerlyUnpacking(1);
+
+pre_test('fptr->perlyunpacking init');
+post_test( $fptr->perlyunpacking == -1 );
+
+pre_test('fptr->perlyunpacking == -1');
+post_test( $fptr->PERLYUNPACKING == PerlyUnpacking() );
+
+pre_test('fptr->perlyunpacking(0)');
+$fptr->perlyunpacking(0);
+post_test( $fptr->perlyunpacking == 0 && $fptr->PERLYUNPACKING == 0 );
+
+pre_test('fptr->perlyunpacking(1)');
+$fptr->perlyunpacking(1);
+post_test( $fptr->perlyunpacking == 1 && $fptr->PERLYUNPACKING == 1 );
+
+pre_test('fptr->perlyunpacking(-1)');
+$fptr->perlyunpacking(-1);
+post_test( $fptr->perlyunpacking == -1 
+	   && $fptr->PERLYUNPACKING == PerlyUnpacking() );
+
 
 pre_test('ffghdn');
 post_test(ffghdn($fptr,$hdunum) == 1);

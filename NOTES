@@ -2,6 +2,7 @@
 Unimplemented:
     * fits_iterate_data
     * fits_open_memfile
+    * fits_split_names
 
 Documented, but unavailable:
     * fits_calc_col
@@ -11,3 +12,5 @@ Undocumented, but implemented:
     * fits_write_col_null
     * fits_read_col_bit
 
+Other:
+    * fits_hdr2str - exclude, nexc parameters unimplemented, they are

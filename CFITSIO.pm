@@ -1,5 +1,5 @@
 package Astro::FITS::CFITSIO;
-$VERSION = '1.01';
+$VERSION = '1.02';
 
 use strict;
 use Carp;
@@ -18,6 +18,7 @@ my @__names_no_short = qw(
                           fits_set_noise_bits
                           fits_get_tile_dim
                           fits_set_tile_dim
+                          fits_hdr2str
 		         );
 
 # perl -nle "next unless /^\s*#define\s+fits_/; (undef,\$l,\$s) = split ' '; print \"\$s => '\$l',\"" /usr/local/cfitsio/longnam.h
@@ -200,6 +201,7 @@ my %__names = (
 	       ffghof => 'fits_get_hduoff',
 	       ffgipr => 'fits_get_img_param',
 	       ffgidt => 'fits_get_img_type',
+	       ffgiet => 'fits_get_img_equivtype',
 	       ffgidm => 'fits_get_img_dim',
 	       ffgisz => 'fits_get_img_size',
 	       ffmahd => 'fits_movabs_hdu',
@@ -235,6 +237,7 @@ my %__names = (
 	       ffgcno => 'fits_get_colnum',
 	       ffgcnn => 'fits_get_colname',
 	       ffgtcl => 'fits_get_coltype',
+	       ffeqty => 'fits_get_eqcoltype',
 	       ffgnrw => 'fits_get_num_rows',
 	       ffgncl => 'fits_get_num_cols',
 	       ffgacl => 'fits_get_acolparms',
@@ -638,6 +641,7 @@ my @__constants = qw(
 		     SHORT_IMG
 		     TBIT
 		     TBYTE
+		     TSBYTE
 		     TCOMPLEX
 		     TDBLCOMPLEX
 		     TDOUBLE
@@ -645,6 +649,7 @@ my @__constants = qw(
 		     TINT
 		     TLOGICAL
 		     TLONG
+		     TLONGLONG
 		     TOO_MANY_DRIVERS
 		     TOO_MANY_FILES
 		     TOO_MANY_HDUS_TRACKED
@@ -863,13 +868,30 @@ a Astro::FITS::CFITSIO "object" one would call C<open_file()>, C<create_file()> 
 C<create_template()>:
 
     my $status = 0;
-    my $fptr = Astro::FITS::CFITSIO::open_file($filename,Astro::FITS::CFITSIO::READONLY(),$status);
+    my $fptr = Astro::FITS::CFITSIO::open_file($filename,
+                        Astro::FITS::CFITSIO::READONLY(),$status);
 
     $fptr->read_key_str('NAXIS1',$naxis1,undef,$status);
 
 Note that the object-oriented forms of function names are only available for
 those cfitsio routines which accept a C<fitsfile*> data-type as the first
 argument.
+
+As an added benefit, whenever a filehandle goes out of scope, B<ffclos()>
+is automatically closed:
+
+    {
+      my $fptr = Astro::FITS::CFITSIO::open_file($filename,
+                        Astro::FITS::CFITSIO::READWRITE(),$status);
+      [manipulate $fptr]
+
+      # neither of the following are needed
+      # ffclos($fptr,$status);
+      # $fptr->close_file($status);
+    }
+
+It there is an error, it will B<croak()>.
+
 
 =head1 NAME SPACE
 
@@ -922,14 +944,47 @@ comment would be roughly equivalent:
 
 =head2 Output Variables
 
-Calling cfitsio routines which read data from FITS files causes the output
-variable to be transformed into a Perl array of the appropriate dimensions.
-The exception to this is if one wants the output to be in the machine-native
-format (e.g., for use with PDL). In this case you can use the routine
-C<PerlyUnpacking(0)>.  Then all output variables will become scalars
-containing the appropriate data. The exception here is with routines which
-read arrays of strings (e.g., C<fits_read_col_str()>).
-In this case the output is again a Perl array reference.
+Calling cfitsio routines which read data from FITS files causes the
+output variable to be transformed into a Perl array of the appropriate
+dimensions.  The exception to this is if one wants the output to be in
+the machine-native format (e.g., for use with PDL).
+Then all output variables will become scalars containing the
+appropriate data. The exception here is with routines which read
+arrays of strings (e.g., C<fits_read_col_str()>).  In this case the
+output is again a Perl array reference.
+
+There are two ways to specify how data are retrieved.  The behavior
+can be specified either globally or on a per filehandle basis.  The
+global selection is done by calling the B<PerlyUnpacking> function.
+This sets the behavior for I<all> file handles which do not
+I<explicitly> choose not to follow it.
+
+  # turn ON unpacking into Perl arrays.  This is the default
+  PerlyUnpacking(1);
+
+  # turn OFF unpacking into Perl arrays, i.e. put in machine-native
+  # format
+  PerlyUnpacking(0);
+
+  # retrieve the current state:
+  $state = PerlyUnpacking();
+
+To change the behavior for a particular file handle, use the
+B<perlyunpacking> method.  The default behavior for a file handle
+is to track what is done with B<PerlyUnpacking()>
+
+  # track PerlyUnpacking().  This is the default
+  $fptr->perlyunpacking(-1);
+
+  # turn ON unpacking into Perl arrays
+  $fptr->perlyunpacking(1);
+
+  # turn OFF unpacking into Perl arrays
+  $fptr->perlyunpacking(0);
+
+  # retrieve the current state:
+  $state = $fptr->perlyunpacking;
+
 
 =head1 EXAMPLES
 

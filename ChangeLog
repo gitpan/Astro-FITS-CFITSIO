@@ -1,4 +1,41 @@
+2004-03-25  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.pm: $VERSION = '1.02';
+
+	* CFITSIO.xs: Added fits_hdr2str, but without the "exclude" and
+	"nexc" parameters. Added TSBYTE support.
+
+2004-02-26  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.xs: Added fits_get_img_equivtype, fits_get_eqcoltype
+
+2003-06-04  Diab Jerius  <djerius@cfa.harvard.edu>
+
+	* CFITSIO.xs: open_file() wasn't handling the possible magic
+	of status correctly (it's in a PPCODE block which doesn't
+	automatically do that for you).
+
+2003-01-06  Diab Jerius  <djerius@cfa.harvard.edu>
+
+	* CFITSIO.xs: forgot to initialize status to 0 in DESTROY.
+	sometimes it worked; sometimes it didn't.
+
+2002-11-26  Diab Jerius  <djerius@cfa.harvard.edu>
+
+	* CFITSIO.xs: the underlying structure representing a filehandle
+	has been changed from a pointer (the returned CFITSIO filehandle
+	of type fitsfile*) to a structure of type FitsFile.
+	
+	* the way that data are unpacked may now be specified on a
+	per-filehandle basis via the perlyunpacking method.
+	
+	* ffclos is automatically called (when necessary) on a filehandle
+	when it goes out of scope.
+
 2002-10-28  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* README: Whoops, already released 1.01 with 1.00 references in
+	readme.
 
 	* CFITSIO.pm: $VERSION = '1.01';
 

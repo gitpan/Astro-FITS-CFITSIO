@@ -3,8 +3,11 @@ NOTE: gcc takes a very long time to compile CFITSIO.c (created from
       about one tenth the time. This is the explanation for the optimization
       flag below. Use whatever flag you want, of course...
 
-1. Edit Makefile.PL, point LIBS and INC to the location of your cfitsio
-   library and include files.
+1. Set the CFITSIO environment variable pointing to the location of
+   your cfitsio library and headers.
+
+   $ export CFITSIO=/path/to/cfitsio # Bourne shell and friends
+   % setenv CFITSIO /path/to/cfitsio # C shell variants
 
 2. perl Makefile.PL OPTIMIZE=-O
 

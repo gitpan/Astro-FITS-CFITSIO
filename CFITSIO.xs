@@ -1007,6 +1007,12 @@ int arg;
 #else
 	    goto not_there;
 #endif
+	if (strEQ(name, "TSBYTE"))
+#ifdef TBYTE
+	    return TSBYTE;
+#else
+	    goto not_there;
+#endif
 	if (strEQ(name, "TCOMPLEX"))
 #ifdef TCOMPLEX
 	    return TCOMPLEX;
@@ -1046,6 +1052,12 @@ int arg;
 	if (strEQ(name, "TLONG"))
 #ifdef TLONG
 	    return TLONG;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TLONGLONG"))
+#ifdef TLONG
+	    return TLONGLONG;
 #else
 	    goto not_there;
 #endif
@@ -1281,6 +1293,12 @@ not_there:
     return 0;
 }
 
+#define NewFitsFile(fptr) \
+do \
+{		New(0, fptr, 1, FitsFile);\
+		fptr->perlyunpacking = -1;\
+		fptr->is_open = 1;\
+} while(0)
 
 MODULE = Astro::FITS::CFITSIO		PACKAGE = Astro::FITS::CFITSIO
 
@@ -1296,8 +1314,67 @@ sizeof_datatype(type)
 	int type
 
 int
-PerlyUnpacking(value)
-	int value
+PerlyUnpacking(...)
+	CODE:
+	        RETVAL = PerlyUnpacking( items > 0 ? SvIV((ST(0))) : -1 );
+	OUTPUT:
+		RETVAL
+
+int
+perlyunpacking(fptr, ...)
+        FitsFile * fptr
+	ALIAS:
+		fitsfilePtr::perlyunpacking = 1
+        CODE:
+	        if( items > 1 )
+                  fptr->perlyunpacking = SvIV((ST(1)));
+                RETVAL = fptr->perlyunpacking;
+	OUTPUT:
+		RETVAL
+
+int
+_is_open(fptr, ...)
+        FitsFile * fptr
+	ALIAS:
+		fitsfilePtr::_is_open = 1
+        CODE:
+	        if( items > 1 )
+                  fptr->is_open = SvIV((ST(1)));
+                RETVAL = fptr->is_open;
+	OUTPUT:
+		RETVAL
+
+int
+PERLYUNPACKING(fptr)
+        FitsFile * fptr
+	ALIAS:
+		fitsfilePtr::PERLYUNPACKING = 1
+        CODE:
+                RETVAL = PERLYUNPACKING(fptr->perlyunpacking);
+	OUTPUT:
+		RETVAL
+
+void
+DESTROY(fptr)
+        FitsFile * fptr
+	ALIAS:
+		fitsfilePtr::DESTROY = 1
+        PREINIT:
+                int status = 0;
+	CODE:
+                if ( fptr->is_open )
+                {
+		  ffclos( fptr->fptr, &status );
+		  if ( status )
+		  {
+		    char * err_text = get_mortalspace(FLEN_ERRMSG,TBYTE);
+		    ffgerr(status,err_text);
+		    Safefree(fptr);
+		    croak( "fitsfilePtr::DESTROY: error closing FITS file: %s",
+		            err_text );
+	          }
+		}
+                Safefree(fptr);
 
 int
 ffgtam(gfptr,mfptr,hdupos,status)
@@ -1315,7 +1392,7 @@ ffgtam(gfptr,mfptr,hdupos,status)
 		if (ST(1)==&PL_sv_undef)
 			mfptr = NULL;
 		else if (sv_derived_from(ST(1),"fitsfilePtr"))
-			mfptr = (fitsfile *)SvIV((SV*)SvRV(ST(1)));
+			mfptr = fitsfileSV(ST(1));
 		else
 			croak("mfptr is not of type fitsfilePtr");
 		RETVAL = ffgtam(gfptr,mfptr,hdupos,&status);
@@ -1361,7 +1438,7 @@ ffbnfm(tform,typecode,repeat,width,status)
 
 int
 ffcrow(fptr,datatype,expr,firstrow,nelements,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int datatype
 	char * expr
 	long firstrow
@@ -1376,12 +1453,12 @@ ffcrow(fptr,datatype,expr,firstrow,nelements,nulval,array,anynul,status)
 	CODE:
 		array = get_mortalspace(nelements,datatype);
 		RETVAL=ffcrow(
-			fptr,datatype,expr,firstrow,nelements,
+			fptr->fptr,datatype,expr,firstrow,nelements,
 			(nulval!=&PL_sv_undef) ? pack1D(nulval,datatype):NULL,
 			array,&anynul,&status
 		);
 		FIXME("ffcrow: I should be calling fftexp (no harm done, however)");
-		unpack1D(ST(6),array,nelements,datatype);
+		unpack1D(ST(6),array,nelements,datatype,fptr->perlyunpacking);
 	OUTPUT:
 		anynul
 		status
@@ -1415,12 +1492,16 @@ ffcmsg()
 
 int
 ffclos(fptr, status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int &status
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_close_file = 1
 		fitsfilePtr::close_file = 2
+	CODE: 
+                RETVAL = ffclos(fptr->fptr, &status);
+                fptr->is_open = 0;
 	OUTPUT:
+		RETVAL
 		status
 
 int
@@ -1573,14 +1654,15 @@ ffgmcp(gfptr,mfptr,member,cpopt,status)
 	OUTPUT:
 		status
 
-fitsfile *
+FitsFile *
 create_file(name,status)
 	char * name
 	int status
 	PREINIT:
-		fitsfile * fptr;
+		FitsFile * fptr;
 	CODE:
-		ffinit(&fptr,name,&status);
+		NewFitsFile(fptr);
+		ffinit(&(fptr->fptr),name,&status);
 		RETVAL = fptr;
 	OUTPUT:
 		RETVAL
@@ -1588,12 +1670,16 @@ create_file(name,status)
 
 int
 ffinit(fptr,name,status)
-	fitsfile * &fptr = NO_INIT
+	FitsFile * &fptr = NO_INIT
 	char * name
 	int &status
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_create_file = 1
+	CODE:
+		NewFitsFile(fptr);
+		RETVAL = ffinit(&(fptr->fptr),name,&status);
 	OUTPUT:
+		RETVAL
 		fptr
 		status
 
@@ -1649,15 +1735,16 @@ ffcrtb(fptr,tbltype,naxis2,tfields,ttype,tform,tunit,extname,status)
 	OUTPUT:
 		status
 
-fitsfile *
+FitsFile *
 create_template(filename,tpltfile,status)
 	char * filename
 	char * tpltfile
 	int status
 	PREINIT:
-		fitsfile * fptr;
+		FitsFile * fptr;
 	CODE:
-		fftplt(&fptr,filename,tpltfile,&status);
+		NewFitsFile(fptr);
+		fftplt(&(fptr->fptr),filename,tpltfile,&status);
 		RETVAL = fptr;
 	OUTPUT:
 		RETVAL
@@ -1665,13 +1752,17 @@ create_template(filename,tpltfile,status)
 
 int
 fftplt(fptr,filename,tpltfile,status)
-	fitsfile * &fptr = NO_INIT
+	FitsFile * &fptr = NO_INIT
 	char * filename
 	char * tpltfile
 	int &status
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_create_template = 1
+	CODE:
+		NewFitsFile(fptr);
+		fftplt(&(fptr->fptr),filename,tpltfile,&status);
 	OUTPUT:
+		RETVAL
 		fptr
 		status
 
@@ -1704,7 +1795,7 @@ ffdsum(ascii,complm,sum)
 
 int
 ffdtdm(fptr,tdimstr,colnum,naxis,naxes,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	char * tdimstr
 	int colnum
 	int naxis = NO_INIT
@@ -1715,16 +1806,16 @@ ffdtdm(fptr,tdimstr,colnum,naxis,naxes,status)
 		fitsfilePtr::decode_tdim = 2
 	CODE:
 		if (ST(4)!=&PL_sv_undef) { /* caller wants naxes set */
-			ffdtdm(fptr,tdimstr,colnum,0,&naxis,NULL,&status);
+			ffdtdm(fptr->fptr,tdimstr,colnum,0,&naxis,NULL,&status);
 			naxes = get_mortalspace(naxis,TLONG);
 		}
 		else {
 			naxes = NULL;
 			naxis = 0;
 		}
-		RETVAL=ffdtdm(fptr,tdimstr,colnum,naxis,&naxis,naxes,&status);
+		RETVAL=ffdtdm(fptr->fptr,tdimstr,colnum,naxis,&naxis,naxes,&status);
 		if (ST(3)!=&PL_sv_undef) sv_setiv(ST(3),naxis);
-		if (ST(4)!=&PL_sv_undef) unpack1D(ST(4),naxes,naxis,TLONG);
+		if (ST(4)!=&PL_sv_undef) unpack1D(ST(4),naxes,naxis,TLONG,fptr->perlyunpacking);
 	OUTPUT:
 		status
 		RETVAL
@@ -1753,12 +1844,16 @@ ffdcol(fptr,colnum,status)
 
 int
 ffdelt(fptr,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int &status
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_delete_file = 1
 		fitsfilePtr::delete_file = 2
+	CODE:
+		RETVAL = ffdelt(fptr->fptr, &status );
+		fptr->is_open = 0;
 	OUTPUT:
+		RETVAL
 		status
 
 int
@@ -1909,7 +2004,7 @@ ffffrw(fptr, expr, rownum, status)
 
 int
 fffrow(fptr,expr,firstrow,nrows,n_good_rows,row_status,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	char * expr
 	long firstrow
 	long nrows
@@ -1920,14 +2015,14 @@ fffrow(fptr,expr,firstrow,nrows,n_good_rows,row_status,status)
 		Astro::FITS::CFITSIO::fits_find_rows = 1
 		fitsfilePtr::find_rows = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nrows*sizeof_datatype(TLOGICAL));
-			RETVAL=fffrow(fptr,expr,firstrow,nrows,&n_good_rows,(logical*)(SvPV(ST(5),PL_na)),&status);
+			RETVAL=fffrow(fptr->fptr,expr,firstrow,nrows,&n_good_rows,(logical*)(SvPV(ST(5),PL_na)),&status);
 		}
 		else {
 			row_status = get_mortalspace(nrows,TLOGICAL);
-			RETVAL=fffrow(fptr,expr,firstrow,nrows,&n_good_rows,row_status,&status);
-			unpack1D(ST(5),row_status,nrows,TLOGICAL);
+			RETVAL=fffrow(fptr->fptr,expr,firstrow,nrows,&n_good_rows,row_status,&status);
+			unpack1D(ST(5),row_status,nrows,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(4) != &PL_sv_undef) sv_setiv(ST(4), n_good_rows); /* value-added */
 	OUTPUT:
@@ -2099,6 +2194,26 @@ ffgtcl(fptr,colnum,typecode,repeat,width,status)
 		RETVAL
 
 int
+ffeqty(fptr,colnum,typecode,repeat,width,status)
+	fitsfile * fptr
+	int colnum
+	int typecode = NO_INIT
+	long repeat = NO_INIT
+	long width = NO_INIT
+	int status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_get_eqcoltype = 1
+		fitsfilePtr::get_eqcoltype = 2
+	CODE:
+		RETVAL = ffeqty(fptr,colnum,&typecode,&repeat,&width,&status);
+		if (ST(2) != &PL_sv_undef) sv_setiv(ST(2),typecode);
+		if (ST(3) != &PL_sv_undef) sv_setiv(ST(3),repeat);
+		if (ST(4) != &PL_sv_undef) sv_setiv(ST(4),width);
+	OUTPUT:
+		status
+		RETVAL
+
+int
 fits_get_compression_type(fptr, comptype, status)
 	fitsfile *fptr
 	int &comptype = NO_INIT
@@ -2261,6 +2376,18 @@ ffgidt(fptr,bitpix,status)
 		status
 
 int
+ffgiet(fptr,bitpix,status)
+	fitsfile * fptr
+	int &bitpix = NO_INIT
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_get_img_equivtype = 1
+		fitsfilePtr::get_img_equivtype = 2
+	OUTPUT:
+		bitpix
+		status
+
+int
 ffgidm(fptr,naxis,status)
 	fitsfile * fptr
 	int &naxis = NO_INIT
@@ -2274,27 +2401,22 @@ ffgidm(fptr,naxis,status)
 
 int
 ffgisz(fptr,naxes,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long *naxes = NO_INIT
 	int status
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_get_img_size = 1
 		fitsfilePtr::get_img_size = 2
 	PREINIT:
-		int nlen, old_packing;
+		int nlen;
 	CODE:
-		/* temporarily disable native array unpacking */
-		old_packing = PerlyUnpacking(-1);
-		if (!old_packing)
-			PerlyUnpacking(1);
-
-		RETVAL = ffgidm(fptr,&nlen,&status);
+		RETVAL = ffgidm(fptr->fptr,&nlen,&status);
 		if (RETVAL <= 0) {
 			naxes = (long *)get_mortalspace(nlen,TLONG);
-			RETVAL = ffgisz(fptr,nlen,naxes,&status);
-			unpack1D(ST(1),naxes,nlen,TLONG);
+			RETVAL = ffgisz(fptr->fptr,nlen,naxes,&status);
+			/* unpack as Perl array */
+			unpack1D(ST(1),naxes,nlen,TLONG,1);
 		}
-		PerlyUnpacking(old_packing);
 	OUTPUT:
 		status
 		RETVAL
@@ -2411,7 +2533,7 @@ ffgabc(tfields,tform,space,rowlen,tbcol,status)
 	CODE:
 		tbcol = get_mortalspace(tfields,TLONG);
 		RETVAL=ffgabc(tfields,tform,space,&rowlen,tbcol,&status);
-		unpack1D(ST(4),tbcol,tfields,TLONG);
+		unpack1D(ST(4),tbcol,tfields,TLONG,-1);
 		if (ST(3) != &PL_sv_undef) sv_setiv(ST(3),rowlen); /* value-added */
 	OUTPUT:
 		status
@@ -2419,7 +2541,7 @@ ffgabc(tfields,tform,space,rowlen,tbcol,status)
 
 int
 fits_get_tile_dim(fptr, ndim, tilesize, status)
-	fitsfile *fptr
+	FitsFile *fptr
 	int ndim
 	long *naxes = NO_INIT
 	int status
@@ -2427,8 +2549,8 @@ fits_get_tile_dim(fptr, ndim, tilesize, status)
 		fitsfilePtr::get_tile_dim = 1
 	CODE:
 		naxes = get_mortalspace(ndim,TLONG);
-		RETVAL=fits_get_tile_dim(fptr,ndim,naxes,&status);
-		if (ST(2)!=&PL_sv_undef) unpack1D(ST(2),naxes,ndim,TLONG);
+		RETVAL=fits_get_tile_dim(fptr->fptr,ndim,naxes,&status);
+		if (ST(2)!=&PL_sv_undef) unpack1D(ST(2),naxes,ndim,TLONG,fptr->perlyunpacking);
 	OUTPUT:
 		status
 		RETVAL
@@ -2442,6 +2564,24 @@ ffvers(version)
 		RETVAL = ffvers(&version);
 		if (ST(0) != &PL_sv_undef) sv_setnv(ST(0),version); /* value-added */
 	OUTPUT:
+		RETVAL
+
+int
+fits_hdr2str(fptr, nocomments, header, nkeys, status)
+	FitsFile *fptr
+	int nocomments
+	char *header = NO_INIT
+	int nkeys = NO_INIT
+	int status
+	ALIAS:
+		fitsfilePtr::hdr2str = 1
+	CODE:
+		RETVAL=fits_hdr2str(fptr->fptr,nocomments,NULL,0,&header,&nkeys,&status);
+		if (ST(2)!=&PL_sv_undef) unpackScalar(ST(2), header, TSTRING);
+		if (ST(3)!=&PL_sv_undef) unpackScalar(ST(3), &nkeys, TINT);
+		free(header);
+	OUTPUT:
+		status
 		RETVAL
 
 int
@@ -3057,13 +3197,15 @@ open_file(filename,iomode,status)
 	int iomode
 	int status
 	PREINIT:
-		fitsfile * fptr;
+		FitsFile * fptr;
 		SV *retval;
 	PPCODE:
 		if (!filename) /* undef passed */
 			filename = "";
-		ffopen(&fptr,filename,iomode,&status);
-		sv_setiv(ST(2), status);
+		NewFitsFile(fptr);
+		ffopen(&(fptr->fptr),filename,iomode,&status);
+		sv_setiv(ST(2), (IV)status);
+		SvSETMAGIC(ST(2));
 		EXTEND(SP, 1);
 		if (status > 0)
 			PUSHs(&PL_sv_undef);
@@ -3075,7 +3217,7 @@ open_file(filename,iomode,status)
 
 int
 ffopen(fptr,filename,iomode,status)
-	fitsfile * fptr = NO_INIT
+	FitsFile * fptr = NO_INIT
 	char * filename
 	int iomode
 	int status
@@ -3084,7 +3226,8 @@ ffopen(fptr,filename,iomode,status)
 	CODE:
 		if (!filename) /* undef passed */
 			filename = "";
-		RETVAL = ffopen(&fptr,filename,iomode,&status);
+		NewFitsFile(fptr);
+		RETVAL = ffopen(&(fptr->fptr),filename,iomode,&status);
 		if (status==0) {
 			sv_setref_pv(ST(0),"fitsfilePtr",fptr);
 		}
@@ -3096,7 +3239,7 @@ ffopen(fptr,filename,iomode,status)
 
 int
 ffdopn(fptr,filename,iomode,status)
-	fitsfile * fptr = NO_INIT
+	FitsFile * fptr = NO_INIT
 	char * filename
 	int iomode
 	int status
@@ -3105,7 +3248,8 @@ ffdopn(fptr,filename,iomode,status)
 	CODE:
 		if (!filename) /* undef passed */
 			filename = "";
-		RETVAL = ffdopn(&fptr,filename,iomode,&status);
+		NewFitsFile(fptr);
+		RETVAL = ffdopn(&(fptr->fptr),filename,iomode,&status);
 		if (status==0) {
 			sv_setref_pv(ST(0),"fitsfilePtr",fptr);
 		}
@@ -3117,7 +3261,7 @@ ffdopn(fptr,filename,iomode,status)
 
 int
 ffiopn(fptr,filename,iomode,status)
-	fitsfile * fptr = NO_INIT
+	FitsFile * fptr = NO_INIT
 	char * filename
 	int iomode
 	int status
@@ -3126,7 +3270,8 @@ ffiopn(fptr,filename,iomode,status)
 	CODE:
 		if (!filename) /* undef passed */
 			filename = "";
-		RETVAL = ffiopn(&fptr,filename,iomode,&status);
+		NewFitsFile(fptr);
+		RETVAL = ffiopn(&(fptr->fptr),filename,iomode,&status);
 		if (status==0) {
 			sv_setref_pv(ST(0),"fitsfilePtr",fptr);
 		}
@@ -3138,7 +3283,7 @@ ffiopn(fptr,filename,iomode,status)
 
 int
 fftopn(fptr,filename,iomode,status)
-	fitsfile * fptr = NO_INIT
+	FitsFile * fptr = NO_INIT
 	char * filename
 	int iomode
 	int status
@@ -3147,7 +3292,8 @@ fftopn(fptr,filename,iomode,status)
 	CODE:
 		if (!filename) /* undef passed */
 			filename = "";
-		RETVAL = fftopn(&fptr,filename,iomode,&status);
+		NewFitsFile(fptr);
+		RETVAL = fftopn(&(fptr->fptr),filename,iomode,&status);
 		if (status==0) {
 			sv_setref_pv(ST(0),"fitsfilePtr",fptr);
 		}
@@ -3161,13 +3307,14 @@ int
 ffgtop(mfptr,group,gfptr,status)
 	fitsfile * mfptr
 	int group
-	fitsfile * gfptr = NO_INIT
+	FitsFile * gfptr = NO_INIT
 	int status
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_open_group = 1
 		fitsfilePtr::open_group = 2
 	CODE:
-		RETVAL = ffgtop(mfptr,group,&gfptr,&status);
+		NewFitsFile(gfptr);
+		RETVAL = ffgtop(mfptr,group,&(gfptr->fptr),&status);
 		if (status > 0)
 			sv_setsv(ST(2), &PL_sv_undef);
 		else
@@ -3180,13 +3327,14 @@ int
 ffgmop(gfptr,member,mfptr,status)
 	fitsfile * gfptr
 	long member
-	fitsfile * mfptr = NO_INIT
+	FitsFile * mfptr = NO_INIT
 	int status
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_open_member = 1
 		fitsfilePtr::open_member = 2
 	CODE:
-		RETVAL = ffgmop(gfptr,member,&mfptr,&status);
+		NewFitsFile(mfptr);
+		RETVAL = ffgmop(gfptr,member,&(mfptr->fptr),&status);
 		if (status > 0)
 			sv_setsv(ST(2), &PL_sv_undef);
 		else
@@ -3263,8 +3411,8 @@ ffrwrg(rowlist, maxrows, maxranges, numranges, rangemin, rangemax, status)
 		RETVAL=ffrwrg(rowlist, maxrows, maxranges, &numranges,
 			rangemin, rangemax, &status);
 		if (ST(3)!=&PL_sv_undef) sv_setiv(ST(3),numranges);
-		if (ST(4)!=&PL_sv_undef) unpack1D(ST(4),rangemin,numranges,TLONG);
-		if (ST(5)!=&PL_sv_undef) unpack1D(ST(5),rangemax,numranges,TLONG);
+		if (ST(4)!=&PL_sv_undef) unpack1D(ST(4),rangemin,numranges,TLONG,-1);
+		if (ST(5)!=&PL_sv_undef) unpack1D(ST(5),rangemax,numranges,TLONG,-1);
 	OUTPUT:
 		status
 		RETVAL
@@ -3343,7 +3491,7 @@ ffwldp(xpix,ypix,xrefval,yrefval,xrefpix,yrefpix,xinc,yinc,rot,coordtype,xpos,yp
 
 int
 ffg2db(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	byte nulval
 	long dim1
@@ -3358,15 +3506,15 @@ ffg2db(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 	PREINIT:
 		long dims[2];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),naxis2*dim1*sizeof_datatype(TBYTE));
-			RETVAL=ffg2db(fptr,group,nulval,dim1,naxis1,naxis2,(byte*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffg2db(fptr->fptr,group,nulval,dim1,naxis1,naxis2,(byte*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis2; dims[1] = dim1;
 			array = get_mortalspace(naxis2*dim1,TBYTE);
-			RETVAL=ffg2db(fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
-			unpack2D(ST(6),array,dims,TBYTE);
+			RETVAL=ffg2db(fptr->fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
+			unpack2D(ST(6),array,dims,TBYTE,fptr->perlyunpacking);
 		}
 		if (ST(7)!=&PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -3375,7 +3523,7 @@ ffg2db(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 
 int
 ffg2dui(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	unsigned short nulval
 	long dim1
@@ -3390,15 +3538,15 @@ ffg2dui(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 	PREINIT:
 		long dims[2];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),naxis2*dim1*sizeof_datatype(TUSHORT));
-			RETVAL=ffg2dui(fptr,group,nulval,dim1,naxis1,naxis2,(unsigned short*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffg2dui(fptr->fptr,group,nulval,dim1,naxis1,naxis2,(unsigned short*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis2; dims[1] = dim1;
 			array = get_mortalspace(naxis2*dim1,TUSHORT);
-			RETVAL=ffg2dui(fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
-			unpack2D(ST(6),array,dims,TUSHORT);
+			RETVAL=ffg2dui(fptr->fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
+			unpack2D(ST(6),array,dims,TUSHORT,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -3407,7 +3555,7 @@ ffg2dui(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 
 int
 ffg2di(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	short nulval
 	long dim1
@@ -3422,15 +3570,15 @@ ffg2di(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 	PREINIT:
 		long dims[2];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),naxis2*dim1*sizeof_datatype(TSHORT));
-			RETVAL=ffg2di(fptr,group,nulval,dim1,naxis1,naxis2,(short*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffg2di(fptr->fptr,group,nulval,dim1,naxis1,naxis2,(short*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis2; dims[1] = dim1;
 			array = get_mortalspace(naxis2*dim1,TSHORT);
-			RETVAL=ffg2di(fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
-			unpack2D(ST(6),array,dims,TSHORT);
+			RETVAL=ffg2di(fptr->fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
+			unpack2D(ST(6),array,dims,TSHORT,fptr->perlyunpacking);
 		}
 		if (ST(7)!=&PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -3439,7 +3587,7 @@ ffg2di(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 
 int
 ffg2duk(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	unsigned int nulval
 	long dim1
@@ -3454,15 +3602,15 @@ ffg2duk(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 	PREINIT:
 		long dims[2];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),naxis2*dim1*sizeof_datatype(TUINT));
-			RETVAL=ffg2duk(fptr,group,nulval,dim1,naxis1,naxis2,(unsigned int*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffg2duk(fptr->fptr,group,nulval,dim1,naxis1,naxis2,(unsigned int*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis2; dims[1] = dim1;
 			array = get_mortalspace(naxis2*dim1,TUINT);
-			RETVAL=ffg2duk(fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
-			unpack2D(ST(6),array,dims,TUINT);
+			RETVAL=ffg2duk(fptr->fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
+			unpack2D(ST(6),array,dims,TUINT,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -3471,7 +3619,7 @@ ffg2duk(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 
 int
 ffg2dk(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	int nulval
 	long dim1
@@ -3486,15 +3634,15 @@ ffg2dk(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 	PREINIT:
 		long dims[2];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),naxis2*dim1*sizeof_datatype(TINT));
-			RETVAL=ffg2dk(fptr,group,nulval,dim1,naxis1,naxis2,(int*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffg2dk(fptr->fptr,group,nulval,dim1,naxis1,naxis2,(int*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis2; dims[1] = dim1;
 			array = get_mortalspace(naxis2*dim1,TINT);
-			RETVAL=ffg2dk(fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
-			unpack2D(ST(6),array,dims,TINT);
+			RETVAL=ffg2dk(fptr->fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
+			unpack2D(ST(6),array,dims,TINT,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -3503,7 +3651,7 @@ ffg2dk(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 
 int
 ffg2duj(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	unsigned long nulval
 	long dim1
@@ -3518,15 +3666,15 @@ ffg2duj(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 	PREINIT:
 		long dims[2];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),naxis2*dim1*sizeof_datatype(TULONG));
-			RETVAL=ffg2duj(fptr,group,nulval,dim1,naxis1,naxis2,(unsigned long*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffg2duj(fptr->fptr,group,nulval,dim1,naxis1,naxis2,(unsigned long*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis2; dims[1] = dim1;
 			array = get_mortalspace(naxis2*dim1,TULONG);
-			RETVAL=ffg2duj(fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
-			unpack2D(ST(6),array,dims,TULONG);
+			RETVAL=ffg2duj(fptr->fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
+			unpack2D(ST(6),array,dims,TULONG,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -3535,7 +3683,7 @@ ffg2duj(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 
 int
 ffg2dj(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long nulval
 	long dim1
@@ -3550,15 +3698,15 @@ ffg2dj(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 	PREINIT:
 		long dims[2];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),naxis2*dim1*sizeof_datatype(TLONG));
-			RETVAL=ffg2dj(fptr,group,nulval,dim1,naxis1,naxis2,(long*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffg2dj(fptr->fptr,group,nulval,dim1,naxis1,naxis2,(long*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis2; dims[1] = dim1;
 			array = get_mortalspace(naxis2*dim1,TLONG);
-			RETVAL=ffg2dj(fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
-			unpack2D(ST(6),array,dims,TLONG);
+			RETVAL=ffg2dj(fptr->fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
+			unpack2D(ST(6),array,dims,TLONG,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -3567,7 +3715,7 @@ ffg2dj(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 
 int
 ffg2de(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	float nulval
 	long dim1
@@ -3582,15 +3730,15 @@ ffg2de(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 	PREINIT:
 		long dims[2];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),naxis2*dim1*sizeof_datatype(TFLOAT));
-			RETVAL=ffg2de(fptr,group,nulval,dim1,naxis1,naxis2,(float*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffg2de(fptr->fptr,group,nulval,dim1,naxis1,naxis2,(float*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis2; dims[1] = dim1;
 			array = get_mortalspace(naxis2*dim1,TFLOAT);
-			RETVAL=ffg2de(fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
-			unpack2D(ST(6),array,dims,TFLOAT);
+			RETVAL=ffg2de(fptr->fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
+			unpack2D(ST(6),array,dims,TFLOAT,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -3599,7 +3747,7 @@ ffg2de(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 
 int
 ffg2dd(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	double nulval
 	long dim1
@@ -3614,15 +3762,15 @@ ffg2dd(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 	PREINIT:
 		long dims[2];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),naxis2*dim1*sizeof_datatype(TDOUBLE));
-			RETVAL=ffg2dd(fptr,group,nulval,dim1,naxis1,naxis2,(double*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffg2dd(fptr->fptr,group,nulval,dim1,naxis1,naxis2,(double*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis2; dims[1] = dim1;
 			array = get_mortalspace(naxis2*dim1,TDOUBLE);
-			RETVAL=ffg2dd(fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
-			unpack2D(ST(6),array,dims,TDOUBLE);
+			RETVAL=ffg2dd(fptr->fptr,group,nulval,dim1,naxis1,naxis2,array,&anynul,&status);
+			unpack2D(ST(6),array,dims,TDOUBLE,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -3631,7 +3779,7 @@ ffg2dd(fptr,group,nulval,dim1,naxis1,naxis2,array,anynul,status)
 
 int
 ffg3db(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	byte nulval
 	long dim1
@@ -3648,15 +3796,15 @@ ffg3db(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 	PREINIT:
 		long dims[3];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),naxis3*dim2*dim1*sizeof_datatype(TBYTE));
-			RETVAL=ffg3db(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(byte*)(SvPV(ST(8),PL_na)),&anynul,&status);
+			RETVAL=ffg3db(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(byte*)(SvPV(ST(8),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis3; dims[1] = dim2; dims[2] = dim1;
 			array = get_mortalspace(dim1*dim2*naxis3,TBYTE);
-			RETVAL=ffg3db(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
-			unpack3D(ST(8),array,dims,TBYTE);
+			RETVAL=ffg3db(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
+			unpack3D(ST(8),array,dims,TBYTE,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -3665,7 +3813,7 @@ ffg3db(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 
 int
 ffg3dui(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	unsigned short nulval
 	long dim1
@@ -3682,15 +3830,15 @@ ffg3dui(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 	PREINIT:
 		long dims[3];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),naxis3*dim2*dim1*sizeof_datatype(TUSHORT));
-			RETVAL=ffg3dui(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(unsigned short*)(SvPV(ST(8),PL_na)),&anynul,&status);
+			RETVAL=ffg3dui(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(unsigned short*)(SvPV(ST(8),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis3; dims[1] = dim2; dims[2] = dim1;
 			array = get_mortalspace(dim1*dim2*naxis3,TUSHORT);
-			RETVAL=ffg3dui(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
-			unpack3D(ST(8),array,dims,TUSHORT);
+			RETVAL=ffg3dui(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
+			unpack3D(ST(8),array,dims,TUSHORT,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -3699,7 +3847,7 @@ ffg3dui(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 
 int
 ffg3di(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	short nulval
 	long dim1
@@ -3716,15 +3864,15 @@ ffg3di(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 	PREINIT:
 		long dims[3];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),naxis3*dim2*dim1*sizeof_datatype(TSHORT));
-			RETVAL=ffg3di(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(short*)(SvPV(ST(8),PL_na)),&anynul,&status);
+			RETVAL=ffg3di(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(short*)(SvPV(ST(8),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis3; dims[1] = dim2; dims[2] = dim1;
 			array = get_mortalspace(dim1*dim2*naxis3,TSHORT);
-			RETVAL=ffg3di(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
-			unpack3D(ST(8),array,dims,TSHORT);
+			RETVAL=ffg3di(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
+			unpack3D(ST(8),array,dims,TSHORT,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -3733,7 +3881,7 @@ ffg3di(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 
 int
 ffg3duk(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	unsigned int nulval
 	long dim1
@@ -3750,15 +3898,15 @@ ffg3duk(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 	PREINIT:
 		long dims[3];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),naxis3*dim2*dim1*sizeof_datatype(TUINT));
-			RETVAL=ffg3duk(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(unsigned int*)(SvPV(ST(8),PL_na)),&anynul,&status);
+			RETVAL=ffg3duk(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(unsigned int*)(SvPV(ST(8),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis3; dims[1] = dim2; dims[2] = dim1;
 			array = get_mortalspace(dim1*dim2*naxis3,TUINT);
-			RETVAL=ffg3duk(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
-			unpack3D(ST(8),array,dims,TUINT);
+			RETVAL=ffg3duk(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
+			unpack3D(ST(8),array,dims,TUINT,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -3767,7 +3915,7 @@ ffg3duk(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 
 int
 ffg3dk(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	int nulval
 	long dim1
@@ -3784,15 +3932,15 @@ ffg3dk(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 	PREINIT:
 		long dims[3];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),naxis3*dim2*dim1*sizeof_datatype(TINT));
-			RETVAL=ffg3dk(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(int*)(SvPV(ST(8),PL_na)),&anynul,&status);
+			RETVAL=ffg3dk(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(int*)(SvPV(ST(8),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis3; dims[1] = dim2; dims[2] = dim1;
 			array = get_mortalspace(dim1*dim2*naxis3,TINT);
-			RETVAL=ffg3dk(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
-			unpack3D(ST(8),array,dims,TINT);
+			RETVAL=ffg3dk(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
+			unpack3D(ST(8),array,dims,TINT,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -3801,7 +3949,7 @@ ffg3dk(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 
 int
 ffg3duj(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	unsigned long nulval
 	long dim1
@@ -3818,15 +3966,15 @@ ffg3duj(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 	PREINIT:
 		long dims[3];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),naxis3*dim2*dim1*sizeof_datatype(TULONG));
-			RETVAL=ffg3duj(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(unsigned long*)(SvPV(ST(8),PL_na)),&anynul,&status);
+			RETVAL=ffg3duj(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(unsigned long*)(SvPV(ST(8),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis3; dims[1] = dim2; dims[2] = dim1;
 			array = get_mortalspace(dim1*dim2*naxis3,TULONG);
-			RETVAL=ffg3duj(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
-			unpack3D(ST(8),array,dims,TULONG);
+			RETVAL=ffg3duj(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
+			unpack3D(ST(8),array,dims,TULONG,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -3835,7 +3983,7 @@ ffg3duj(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 
 int
 ffg3dj(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long nulval
 	long dim1
@@ -3852,15 +4000,15 @@ ffg3dj(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 	PREINIT:
 		long dims[3];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),naxis3*dim2*dim1*sizeof_datatype(TLONG));
-			RETVAL=ffg3dj(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(long*)(SvPV(ST(8),PL_na)),&anynul,&status);
+			RETVAL=ffg3dj(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(long*)(SvPV(ST(8),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis3; dims[1] = dim2; dims[2] = dim1;
 			array = get_mortalspace(dim1*dim2*naxis3,TLONG);
-			RETVAL=ffg3dj(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
-			unpack3D(ST(8),array,dims,TLONG);
+			RETVAL=ffg3dj(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
+			unpack3D(ST(8),array,dims,TLONG,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -3869,7 +4017,7 @@ ffg3dj(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 
 int
 ffg3de(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	float nulval
 	long dim1
@@ -3886,15 +4034,15 @@ ffg3de(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 	PREINIT:
 		long dims[3];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),naxis3*dim2*dim1*sizeof_datatype(TFLOAT));
-			RETVAL=ffg3de(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(float*)(SvPV(ST(8),PL_na)),&anynul,&status);
+			RETVAL=ffg3de(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(float*)(SvPV(ST(8),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis3; dims[1] = dim2; dims[2] = dim1;
 			array = get_mortalspace(dim1*dim2*naxis3,TFLOAT);
-			RETVAL=ffg3de(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
-			unpack3D(ST(8),array,dims,TFLOAT);
+			RETVAL=ffg3de(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
+			unpack3D(ST(8),array,dims,TFLOAT,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -3903,7 +4051,7 @@ ffg3de(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 
 int
 ffg3dd(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	double nulval
 	long dim1
@@ -3920,15 +4068,15 @@ ffg3dd(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,anynul,status)
 	PREINIT:
 		long dims[3];
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),naxis3*dim2*dim1*sizeof_datatype(TDOUBLE));
-			RETVAL=ffg3dd(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(double*)(SvPV(ST(8),PL_na)),&anynul,&status);
+			RETVAL=ffg3dd(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,(double*)(SvPV(ST(8),PL_na)),&anynul,&status);
 		}
 		else {
 			dims[0]=naxis3; dims[1] = dim2; dims[2] = dim1;
 			array = get_mortalspace(dim1*dim2*naxis3,TDOUBLE);
-			RETVAL=ffg3dd(fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
-			unpack3D(ST(8),array,dims,TDOUBLE);
+			RETVAL=ffg3dd(fptr->fptr,group,nulval,dim1,dim2,naxis1,naxis2,naxis3,array,&anynul,&status);
+			unpack3D(ST(8),array,dims,TDOUBLE,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -3950,7 +4098,7 @@ ffgcdw(fptr, colnum, dispwidth, status)
 
 int
 ffghtb(fptr,rowlen,nrows,tfields,ttype,tbcol,tform,tunit,extname,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long rowlen = NO_INIT
 	long nrows = NO_INIT
 	int tfields = NO_INIT
@@ -3966,7 +4114,7 @@ ffghtb(fptr,rowlen,nrows,tfields,ttype,tbcol,tform,tunit,extname,status)
 	PREINIT:
 		int i;
 	CODE:
-		ffghtb(fptr,0,&rowlen,&nrows,&tfields,NULL,NULL,NULL,NULL,NULL,&status);
+		ffghtb(fptr->fptr,0,&rowlen,&nrows,&tfields,NULL,NULL,NULL,NULL,NULL,&status);
 
 		tbcol = (ST(5)!=&PL_sv_undef) ? get_mortalspace(tfields,TLONG) : NULL;
 		extname = (ST(8)!=&PL_sv_undef) ? get_mortalspace(FLEN_VALUE,TBYTE) : NULL;
@@ -3986,14 +4134,14 @@ ffghtb(fptr,rowlen,nrows,tfields,ttype,tbcol,tform,tunit,extname,status)
 				tunit[i] = get_mortalspace(FLEN_VALUE,TBYTE);
 		} else tunit = NULL;
 
-		RETVAL=ffghtb(fptr,tfields,&rowlen,&nrows,&tfields,ttype,tbcol,tform,tunit,extname,&status);
+		RETVAL=ffghtb(fptr->fptr,tfields,&rowlen,&nrows,&tfields,ttype,tbcol,tform,tunit,extname,&status);
 		if (ST(1)!=&PL_sv_undef) sv_setiv(ST(1),rowlen);
 		if (ST(2)!=&PL_sv_undef) sv_setiv(ST(2),nrows);
 		if (ST(3)!=&PL_sv_undef) sv_setiv(ST(3),tfields);
-		if (ST(4)!=&PL_sv_undef) unpack1D(ST(4),ttype,tfields,TSTRING);
-		if (ST(5)!=&PL_sv_undef) unpack1D(ST(5),tbcol,tfields,TLONG);
-		if (ST(6)!=&PL_sv_undef) unpack1D(ST(6),tform,tfields,TSTRING);
-		if (ST(7)!=&PL_sv_undef) unpack1D(ST(7),tunit,tfields,TSTRING);
+		if (ST(4)!=&PL_sv_undef) unpack1D(ST(4),ttype,tfields,TSTRING,fptr->perlyunpacking);
+		if (ST(5)!=&PL_sv_undef) unpack1D(ST(5),tbcol,tfields,TLONG,fptr->perlyunpacking);
+		if (ST(6)!=&PL_sv_undef) unpack1D(ST(6),tform,tfields,TSTRING,fptr->perlyunpacking);
+		if (ST(7)!=&PL_sv_undef) unpack1D(ST(7),tunit,tfields,TSTRING,fptr->perlyunpacking);
 		if (ST(8)!=&PL_sv_undef) sv_setpv(ST(8),extname);
 	OUTPUT:
 		status
@@ -4001,7 +4149,7 @@ ffghtb(fptr,rowlen,nrows,tfields,ttype,tbcol,tform,tunit,extname,status)
 
 int
 ffghbn(fptr,nrows,tfields,ttype,tform,tunit,extname,pcount,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long nrows = NO_INIT
 	int tfields = NO_INIT
 	char ** ttype = NO_INIT
@@ -4016,7 +4164,7 @@ ffghbn(fptr,nrows,tfields,ttype,tform,tunit,extname,pcount,status)
 	PREINIT:
 		int i;
 	CODE:
-		ffghbn(fptr,0,&nrows,&tfields,NULL,NULL,NULL,NULL,&pcount,&status);
+		ffghbn(fptr->fptr,0,&nrows,&tfields,NULL,NULL,NULL,NULL,&pcount,&status);
 		extname = (ST(7)!=&PL_sv_undef) ? get_mortalspace(FLEN_VALUE,TBYTE) : NULL;
 		if (ST(4) != &PL_sv_undef) {
 			ttype = get_mortalspace(tfields,TSTRING);
@@ -4033,12 +4181,12 @@ ffghbn(fptr,nrows,tfields,ttype,tform,tunit,extname,pcount,status)
 			for (i=0; i<tfields; i++)
 				tunit[i] = get_mortalspace(FLEN_VALUE,TBYTE);
 		} else tunit = NULL;
-		RETVAL=ffghbn(fptr,tfields,&nrows,&tfields,ttype,tform,tunit,extname,&pcount,&status);
+		RETVAL=ffghbn(fptr->fptr,tfields,&nrows,&tfields,ttype,tform,tunit,extname,&pcount,&status);
 		if (ST(1)!=&PL_sv_undef) sv_setiv(ST(1),nrows);
 		if (ST(2)!=&PL_sv_undef) sv_setiv(ST(2),tfields);
-		if (ST(3)!=&PL_sv_undef) unpack1D(ST(3),ttype,tfields,TSTRING);
-		if (ST(4)!=&PL_sv_undef) unpack1D(ST(4),tform,tfields,TSTRING);
-		if (ST(5)!=&PL_sv_undef) unpack1D(ST(5),tunit,tfields,TSTRING);
+		if (ST(3)!=&PL_sv_undef) unpack1D(ST(3),ttype,tfields,TSTRING,fptr->perlyunpacking);
+		if (ST(4)!=&PL_sv_undef) unpack1D(ST(4),tform,tfields,TSTRING,fptr->perlyunpacking);
+		if (ST(5)!=&PL_sv_undef) unpack1D(ST(5),tunit,tfields,TSTRING,fptr->perlyunpacking);
 		if (ST(6)!=&PL_sv_undef) sv_setpv(ST(6),extname);
 		if (ST(7)!=&PL_sv_undef) sv_setiv(ST(7),pcount);
 	OUTPUT:
@@ -4064,7 +4212,7 @@ ffgcrd(fptr,keyname,card,status)
 
 int
 ffgcv(fptr,datatype,colnum,firstrow,firstelem,nelements,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int datatype
 	int colnum
 	long firstrow
@@ -4084,19 +4232,19 @@ ffgcv(fptr,datatype,colnum,firstrow,firstelem,nelements,nulval,array,anynul,stat
 		storage_datatype = datatype;
 		if (datatype == TBIT)
 			storage_datatype = TLOGICAL;
-		if (!PerlyUnpacking(-1) && datatype != TSTRING) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking) && datatype != TSTRING) {
 			SvGROW(ST(7),nelements*sizeof_datatype(storage_datatype));
-			RETVAL=ffgcv(fptr,datatype,colnum,firstrow,firstelem,nelements,pack1D(nulval,storage_datatype),(void*)(SvPV(ST(7),PL_na)),&anynul,&status);
+			RETVAL=ffgcv(fptr->fptr,datatype,colnum,firstrow,firstelem,nelements,pack1D(nulval,storage_datatype),(void*)(SvPV(ST(7),PL_na)),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelements,storage_datatype);
 			if (datatype == TSTRING) {
-				col_width = column_width(fptr,colnum);
+				col_width = column_width(fptr->fptr,colnum);
 				for (i=0;i<nelements;i++)
 					*((char**)array+i)=(char *)get_mortalspace(col_width+1,TBYTE);
 			}
-			RETVAL=ffgcv(fptr,datatype,colnum,firstrow,firstelem,nelements,pack1D(nulval,storage_datatype),array,&anynul,&status);
-			unpack1D(ST(7),array,nelements,storage_datatype);
+			RETVAL=ffgcv(fptr->fptr,datatype,colnum,firstrow,firstelem,nelements,pack1D(nulval,storage_datatype),array,&anynul,&status);
+			unpack1D(ST(7),array,nelements,storage_datatype,fptr->perlyunpacking);
 		}
 		if (ST(8) != &PL_sv_undef) sv_setiv(ST(8),anynul);
 	OUTPUT:
@@ -4105,7 +4253,7 @@ ffgcv(fptr,datatype,colnum,firstrow,firstelem,nelements,nulval,array,anynul,stat
 
 int
 ffgcx(fptr,colnum,frow,fbit,nbit,larray,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long fbit
@@ -4116,14 +4264,14 @@ ffgcx(fptr,colnum,frow,fbit,nbit,larray,status)
 		Astro::FITS::CFITSIO::fits_read_col_bit = 1
 		fitsfilePtr::read_col_bit = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nbit*sizeof_datatype(TLOGICAL));
-			RETVAL = ffgcx(fptr,colnum,frow,fbit,nbit,(logical*)(SvPV(ST(5),PL_na)),&status);
+			RETVAL = ffgcx(fptr->fptr,colnum,frow,fbit,nbit,(logical*)(SvPV(ST(5),PL_na)),&status);
 		}
 		else {
 			larray = get_mortalspace(nbit,TLOGICAL);
-			RETVAL=ffgcx(fptr,colnum,frow,fbit,nbit,larray,&status);
-			unpack1D(ST(5),larray,nbit,TLOGICAL);
+			RETVAL=ffgcx(fptr->fptr,colnum,frow,fbit,nbit,larray,&status);
+			unpack1D(ST(5),larray,nbit,TLOGICAL,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -4131,7 +4279,7 @@ ffgcx(fptr,colnum,frow,fbit,nbit,larray,status)
 
 int
 ffgcxui(fptr,colnum,frow,nrows,fbit,nbits,array,status)
-	fitsfile *fptr
+	FitsFile *fptr
 	int colnum
 	long frow
 	long nrows
@@ -4143,14 +4291,14 @@ ffgcxui(fptr,colnum,frow,nrows,fbit,nbits,array,status)
 		Astro::FITS::CFITSIO::fits_read_col_bit_usht = 1
 		fitsfilePtr::read_col_bit_usht = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nrows*sizeof_datatype(TUSHORT));
-			RETVAL = ffgcxui(fptr,colnum,frow,nrows,fbit,nbits,(unsigned short*)(SvPV(ST(6),PL_na)),&status);
+			RETVAL = ffgcxui(fptr->fptr,colnum,frow,nrows,fbit,nbits,(unsigned short*)(SvPV(ST(6),PL_na)),&status);
 		}
 		else {
 			array = get_mortalspace(nrows,TUSHORT);
-			RETVAL = ffgcxui(fptr,colnum,frow,nrows,fbit,nbits,array,&status);
-			unpack1D((SV*)ST(6),array,nrows,TUSHORT);
+			RETVAL = ffgcxui(fptr->fptr,colnum,frow,nrows,fbit,nbits,array,&status);
+			unpack1D((SV*)ST(6),array,nrows,TUSHORT,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		RETVAL
@@ -4158,7 +4306,7 @@ ffgcxui(fptr,colnum,frow,nrows,fbit,nbits,array,status)
 
 int
 ffgcxuk(fptr,colnum,frow,nrows,fbit,nbits,array,status)
-	fitsfile *fptr
+	FitsFile *fptr
 	int colnum
 	long frow
 	long nrows
@@ -4170,14 +4318,14 @@ ffgcxuk(fptr,colnum,frow,nrows,fbit,nbits,array,status)
 		Astro::FITS::CFITSIO::fits_read_col_bit_uint = 1
 		fitsfilePtr::read_col_bit_uint = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nrows*sizeof_datatype(TUINT));
-			RETVAL = ffgcxuk(fptr,colnum,frow,nrows,fbit,nbits,(unsigned int*)(SvPV(ST(6),PL_na)),&status);
+			RETVAL = ffgcxuk(fptr->fptr,colnum,frow,nrows,fbit,nbits,(unsigned int*)(SvPV(ST(6),PL_na)),&status);
 		}
 		else {
 			array = get_mortalspace(nrows,TUINT);
-			RETVAL = ffgcxuk(fptr,colnum,frow,nrows,fbit,nbits,array,&status);
-			unpack1D((SV*)ST(6),array,nrows,TUINT);
+			RETVAL = ffgcxuk(fptr->fptr,colnum,frow,nrows,fbit,nbits,array,&status);
+			unpack1D((SV*)ST(6),array,nrows,TUINT,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		RETVAL
@@ -4185,7 +4333,7 @@ ffgcxuk(fptr,colnum,frow,nrows,fbit,nbits,array,status)
 
 int
 ffgcvs(fptr,colnum,firstrow,firstelem,nelements,nulstr,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long firstrow
 	long firstelem
@@ -4201,12 +4349,12 @@ ffgcvs(fptr,colnum,firstrow,firstelem,nelements,nulstr,array,anynul,status)
 		long i;
 		long col_size;
 	CODE:
-		col_size = column_width(fptr,colnum);
+		col_size = column_width(fptr->fptr,colnum);
 		array = get_mortalspace(nelements,TSTRING);
 		for (i=0;i<nelements;i++)
 			array[i] = (char *)get_mortalspace(col_size+1,TBYTE);
-		RETVAL=ffgcvs(fptr,colnum,firstrow,firstelem,nelements,nulstr,array,&anynul,&status);
-		unpack1D((SV*)ST(6),array,nelements,TSTRING);
+		RETVAL=ffgcvs(fptr->fptr,colnum,firstrow,firstelem,nelements,nulstr,array,&anynul,&status);
+		unpack1D((SV*)ST(6),array,nelements,TSTRING,fptr->perlyunpacking);
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
 		status
@@ -4214,7 +4362,7 @@ ffgcvs(fptr,colnum,firstrow,firstelem,nelements,nulstr,array,anynul,status)
 
 int
 ffgcvl(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4227,14 +4375,14 @@ ffgcvl(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_log = 1
 		fitsfilePtr::read_col_log = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TLOGICAL));
-			RETVAL=ffgcvl(fptr,cnum,frow,felem,nelem,nulval,(logical*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcvl(fptr->fptr,cnum,frow,felem,nelem,nulval,(logical*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = (logical *)get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcvl(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D((SV*)ST(6),(void*)array,nelem,TLOGICAL);
+			RETVAL=ffgcvl(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D((SV*)ST(6),(void*)array,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4243,7 +4391,7 @@ ffgcvl(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcvb(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4256,14 +4404,14 @@ ffgcvb(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_byt = 1
 		fitsfilePtr::read_col_byt = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TBYTE));
-			RETVAL=ffgcvb(fptr,cnum,frow,felem,nelem,nulval,(byte*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcvb(fptr->fptr,cnum,frow,felem,nelem,nulval,(byte*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = (byte *)get_mortalspace(nelem,TBYTE);
-			RETVAL=ffgcvb(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D((SV*)ST(6),(void*)array,nelem,TBYTE);
+			RETVAL=ffgcvb(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D((SV*)ST(6),(void*)array,nelem,TBYTE,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4272,7 +4420,7 @@ ffgcvb(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcvui(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4285,14 +4433,14 @@ ffgcvui(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_usht = 1
 		fitsfilePtr::read_col_usht = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TUSHORT));
-			RETVAL=ffgcvui(fptr,cnum,frow,felem,nelem,nulval,(unsigned short*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcvui(fptr->fptr,cnum,frow,felem,nelem,nulval,(unsigned short*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = (unsigned short *)get_mortalspace(nelem,TUSHORT);
-			RETVAL=ffgcvui(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D((SV*)ST(6),(void*)array,nelem,TUSHORT);
+			RETVAL=ffgcvui(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D((SV*)ST(6),(void*)array,nelem,TUSHORT,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4301,7 +4449,7 @@ ffgcvui(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcvi(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4314,14 +4462,14 @@ ffgcvi(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_sht = 1
 		fitsfilePtr::read_col_sht = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TSHORT));
-			RETVAL=ffgcvi(fptr,cnum,frow,felem,nelem,nulval,(short*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcvi(fptr->fptr,cnum,frow,felem,nelem,nulval,(short*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = (short *)get_mortalspace(nelem,TSHORT);
-			RETVAL=ffgcvi(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D((SV*)ST(6),(void*)array,nelem,TSHORT);
+			RETVAL=ffgcvi(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D((SV*)ST(6),(void*)array,nelem,TSHORT,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4330,7 +4478,7 @@ ffgcvi(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcvuk(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4343,14 +4491,14 @@ ffgcvuk(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_uint = 1
 		fitsfilePtr::read_col_uint = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TUINT));
-			RETVAL=ffgcvuk(fptr,cnum,frow,felem,nelem,nulval,(unsigned int*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcvuk(fptr->fptr,cnum,frow,felem,nelem,nulval,(unsigned int*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = (unsigned int *)get_mortalspace(nelem,TUINT);
-			RETVAL=ffgcvuk(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D((SV*)ST(6),(void*)array,nelem,TUINT);
+			RETVAL=ffgcvuk(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D((SV*)ST(6),(void*)array,nelem,TUINT,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4359,7 +4507,7 @@ ffgcvuk(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcvk(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4372,14 +4520,14 @@ ffgcvk(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_int = 1
 		fitsfilePtr::read_col_int = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TINT));
-			RETVAL=ffgcvk(fptr,cnum,frow,felem,nelem,nulval,(int*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcvk(fptr->fptr,cnum,frow,felem,nelem,nulval,(int*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = (int *)get_mortalspace(nelem,TINT);
-			RETVAL=ffgcvk(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D((SV*)ST(6),(void*)array,nelem,TINT);
+			RETVAL=ffgcvk(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D((SV*)ST(6),(void*)array,nelem,TINT,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4388,7 +4536,7 @@ ffgcvk(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcvuj(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4401,14 +4549,14 @@ ffgcvuj(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_ulng = 1
 		fitsfilePtr::read_col_ulng = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TULONG));
-			RETVAL=ffgcvuj(fptr,cnum,frow,felem,nelem,nulval,(unsigned long*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcvuj(fptr->fptr,cnum,frow,felem,nelem,nulval,(unsigned long*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = (unsigned long *)get_mortalspace(nelem,TULONG);
-			RETVAL=ffgcvuj(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D((SV*)ST(6),(void*)array,nelem,TULONG);
+			RETVAL=ffgcvuj(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D((SV*)ST(6),(void*)array,nelem,TULONG,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4417,7 +4565,7 @@ ffgcvuj(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcvj(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4430,14 +4578,14 @@ ffgcvj(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_lng = 1
 		fitsfilePtr::read_col_lng = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TLONG));
-			RETVAL=ffgcvj(fptr,cnum,frow,felem,nelem,nulval,(long*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcvj(fptr->fptr,cnum,frow,felem,nelem,nulval,(long*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = (long *)get_mortalspace(nelem,TLONG);
-			RETVAL=ffgcvj(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D((SV*)ST(6),(void*)array,nelem,TLONG);
+			RETVAL=ffgcvj(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D((SV*)ST(6),(void*)array,nelem,TLONG,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4446,7 +4594,7 @@ ffgcvj(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcve(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4459,14 +4607,14 @@ ffgcve(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_flt = 1
 		fitsfilePtr::read_col_flt = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TFLOAT));
-			RETVAL=ffgcve(fptr,cnum,frow,felem,nelem,nulval,(float*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcve(fptr->fptr,cnum,frow,felem,nelem,nulval,(float*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = (float *)get_mortalspace(nelem,TFLOAT);
-			RETVAL=ffgcve(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D((SV*)ST(6),(void*)array,nelem,TFLOAT);
+			RETVAL=ffgcve(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D((SV*)ST(6),(void*)array,nelem,TFLOAT,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4475,7 +4623,7 @@ ffgcve(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcvd(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4488,14 +4636,14 @@ ffgcvd(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_dbl = 1
 		fitsfilePtr::read_col_dbl = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TDOUBLE));
-			RETVAL=ffgcvd(fptr,cnum,frow,felem,nelem,nulval,(double*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcvd(fptr->fptr,cnum,frow,felem,nelem,nulval,(double*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TDOUBLE);
-			RETVAL=ffgcvd(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(6),array,nelem,TDOUBLE);
+			RETVAL=ffgcvd(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(6),array,nelem,TDOUBLE,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4504,7 +4652,7 @@ ffgcvd(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcvc(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4517,14 +4665,14 @@ ffgcvc(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_cmp = 1
 		fitsfilePtr::read_col_cmp = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TCOMPLEX));
-			RETVAL=ffgcvc(fptr,cnum,frow,felem,nelem,nulval,(float*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcvc(fptr->fptr,cnum,frow,felem,nelem,nulval,(float*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TCOMPLEX);
-			RETVAL=ffgcvc(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(6),array,nelem,TCOMPLEX);
+			RETVAL=ffgcvc(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(6),array,nelem,TCOMPLEX,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4533,7 +4681,7 @@ ffgcvc(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcvm(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int cnum
 	long frow
 	long felem
@@ -4546,14 +4694,14 @@ ffgcvm(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_col_dblcmp = 1
 		fitsfilePtr::read_col_dblcmp = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),nelem*sizeof_datatype(TDBLCOMPLEX));
-			RETVAL=ffgcvm(fptr,cnum,frow,felem,nelem,nulval,(double*)(SvPV(ST(6),PL_na)),&anynul,&status);
+			RETVAL=ffgcvm(fptr->fptr,cnum,frow,felem,nelem,nulval,(double*)(SvPV(ST(6),PL_na)),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TDBLCOMPLEX);
-			RETVAL=ffgcvm(fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(6),array,nelem,TDBLCOMPLEX);
+			RETVAL=ffgcvm(fptr->fptr,cnum,frow,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(6),array,nelem,TDBLCOMPLEX,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4562,7 +4710,7 @@ ffgcvm(fptr,cnum,frow,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgcf(fptr,datatype,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int datatype
 	int colnum
 	long frow
@@ -4581,7 +4729,7 @@ ffgcf(fptr,datatype,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		storage_datatype = datatype;
 		if (datatype == TBIT)
 			storage_datatype = TLOGICAL;
-		if (!PerlyUnpacking(-1) && datatype != TSTRING) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking) && datatype != TSTRING) {
 			if (ST(6)!=&PL_sv_undef) {
 				SvGROW(ST(6),nelem*sizeof_datatype(storage_datatype));
 				array = (void*)(SvPV(ST(6),PL_na));
@@ -4594,16 +4742,16 @@ ffgcf(fptr,datatype,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcf(fptr,datatype,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcf(fptr->fptr,datatype,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,storage_datatype);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcf(fptr,datatype,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcf(fptr->fptr,datatype,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 			if (ST(6)!=&PL_sv_undef)
-				unpack1D(ST(6),array,nelem,storage_datatype);
+				unpack1D(ST(6),array,nelem,storage_datatype,fptr->perlyunpacking);
 			if (ST(7)!=&PL_sv_undef)
-				unpack1D(ST(7),nularray,nelem,TLOGICAL);
+				unpack1D(ST(7),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(8)!=&PL_sv_undef)
 			sv_setiv(ST(8),anynul);
@@ -4613,7 +4761,7 @@ ffgcf(fptr,datatype,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfs(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -4628,11 +4776,11 @@ ffgcfs(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 	PREINIT:
 		long col_size, i;
 	CODE:
-		col_size = column_width(fptr,colnum);
+		col_size = column_width(fptr->fptr,colnum);
 		array = get_mortalspace(nelem,TSTRING);
 		for (i=0;i<nelem;i++)
 			array[i] = (char *)get_mortalspace(col_size+1,TBYTE);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(6) != &PL_sv_undef) {
 				SvGROW(ST(6),nelem*sizeof_datatype(TLOGICAL));
 				nularray = SvPV(ST(6),PL_na);
@@ -4640,14 +4788,14 @@ ffgcfs(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
 
-			RETVAL=ffgcfs(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfs(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfs(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL);
+			RETVAL=ffgcfs(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
-		if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TSTRING);
+		if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TSTRING,fptr->perlyunpacking);
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
 		status
@@ -4655,7 +4803,7 @@ ffgcfs(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfl(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -4668,7 +4816,7 @@ ffgcfl(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_log = 1
 		fitsfilePtr::read_colnull_log = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TLOGICAL));
 				array = (logical*)(SvPV(ST(5),PL_na));
@@ -4681,14 +4829,14 @@ ffgcfl(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfl(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfl(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TLOGICAL);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfl(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TLOGICAL);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL);
+			RETVAL=ffgcfl(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TLOGICAL,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4697,7 +4845,7 @@ ffgcfl(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfb(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -4710,7 +4858,7 @@ ffgcfb(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_byt = 1
 		fitsfilePtr::read_colnull_byt = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TBYTE));
 				array = (byte*)(SvPV(ST(5),PL_na));
@@ -4723,14 +4871,14 @@ ffgcfb(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfb(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfb(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TBYTE);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfb(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TBYTE);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL);
+			RETVAL=ffgcfb(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TBYTE,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4739,7 +4887,7 @@ ffgcfb(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfui(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -4752,7 +4900,7 @@ ffgcfui(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_usht = 1
 		fitsfilePtr::read_colnull_usht = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TUSHORT));
 				array = (unsigned short*)(SvPV(ST(5),PL_na));
@@ -4765,14 +4913,14 @@ ffgcfui(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfui(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfui(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TUSHORT);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfui(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TUSHORT);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL);
+			RETVAL=ffgcfui(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TUSHORT,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4781,7 +4929,7 @@ ffgcfui(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfi(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -4794,7 +4942,7 @@ ffgcfi(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_sht = 1
 		fitsfilePtr::read_colnull_sht = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TSHORT));
 				array = (short*)(SvPV(ST(5),PL_na));
@@ -4807,14 +4955,14 @@ ffgcfi(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfi(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfi(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TSHORT);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfi(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TSHORT);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL);
+			RETVAL=ffgcfi(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TSHORT,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4823,7 +4971,7 @@ ffgcfi(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfk(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -4836,7 +4984,7 @@ ffgcfk(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_int = 1
 		fitsfilePtr::read_colnull_int = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TINT));
 				array = (int*)(SvPV(ST(5),PL_na));
@@ -4849,14 +4997,14 @@ ffgcfk(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfk(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfk(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TINT);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfk(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TINT);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL);
+			RETVAL=ffgcfk(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TINT,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4865,7 +5013,7 @@ ffgcfk(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfuk(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -4878,7 +5026,7 @@ ffgcfuk(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_uint = 1
 		fitsfilePtr::read_colnull_uint = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TUINT));
 				array = (unsigned int*)(SvPV(ST(5),PL_na));
@@ -4891,14 +5039,14 @@ ffgcfuk(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfuk(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfuk(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TUINT);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfuk(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TUINT);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL);
+			RETVAL=ffgcfuk(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TUINT,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4907,7 +5055,7 @@ ffgcfuk(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfj(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -4920,7 +5068,7 @@ ffgcfj(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_lng = 1
 		fitsfilePtr::read_colnull_lng = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TLONG));
 				array = (long*)(SvPV(ST(5),PL_na));
@@ -4933,14 +5081,14 @@ ffgcfj(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfj(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfj(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TLONG);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfj(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TLONG);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL);
+			RETVAL=ffgcfj(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TLONG,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4949,7 +5097,7 @@ ffgcfj(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfuj(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -4962,7 +5110,7 @@ ffgcfuj(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_ulng = 1
 		fitsfilePtr::read_colnull_ulng = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TULONG));
 				array = (unsigned long*)(SvPV(ST(5),PL_na));
@@ -4975,14 +5123,14 @@ ffgcfuj(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfuj(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfuj(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TULONG);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfuj(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TULONG);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL);
+			RETVAL=ffgcfuj(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TULONG,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -4991,7 +5139,7 @@ ffgcfuj(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfe(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -5004,7 +5152,7 @@ ffgcfe(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_flt = 1
 		fitsfilePtr::read_colnull_flt = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TFLOAT));
 				array = (float*)(SvPV(ST(5),PL_na));
@@ -5017,14 +5165,14 @@ ffgcfe(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfe(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfe(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TFLOAT);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfe(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TFLOAT);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL);
+			RETVAL=ffgcfe(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TFLOAT,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -5033,7 +5181,7 @@ ffgcfe(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfd(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -5046,7 +5194,7 @@ ffgcfd(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_dbl = 1
 		fitsfilePtr::read_colnull_dbl = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TDOUBLE));
 				array = (double*)(SvPV(ST(5),PL_na));
@@ -5059,14 +5207,14 @@ ffgcfd(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfd(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfd(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TDOUBLE);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgcfd(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TDOUBLE);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL);
+			RETVAL=ffgcfd(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TDOUBLE,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -5075,7 +5223,7 @@ ffgcfd(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfc(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -5088,7 +5236,7 @@ ffgcfc(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_cmp = 1
 		fitsfilePtr::read_colnull_cmp = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TCOMPLEX));
 				array = (float*)(SvPV(ST(5),PL_na));
@@ -5101,14 +5249,14 @@ ffgcfc(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(2*nelem,TLOGICAL);
-			RETVAL=ffgcfc(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfc(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TCOMPLEX);
 			nularray = get_mortalspace(nelem*2,TLOGICAL);
-			RETVAL=ffgcfc(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TCOMPLEX);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem*2,TLOGICAL);
+			RETVAL=ffgcfc(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TCOMPLEX,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem*2,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -5117,7 +5265,7 @@ ffgcfc(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgcfm(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long felem
@@ -5130,7 +5278,7 @@ ffgcfm(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_colnull_dblcmp = 1
 		fitsfilePtr::read_colnull_dblcmp = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(5) != &PL_sv_undef) {
 				SvGROW(ST(5),nelem*sizeof_datatype(TDBLCOMPLEX));
 				array = (double*)(SvPV(ST(5),PL_na));
@@ -5143,14 +5291,14 @@ ffgcfm(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(2*nelem,TLOGICAL);
-			RETVAL=ffgcfm(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgcfm(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TDBLCOMPLEX);
 			nularray = get_mortalspace(nelem*2,TLOGICAL);
-			RETVAL=ffgcfm(fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TDBLCOMPLEX);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem*2,TLOGICAL);
+			RETVAL=ffgcfm(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TDBLCOMPLEX,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem*2,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -5178,7 +5326,7 @@ ffgdes(fptr,colnum,rownum,repeat,offset,status)
 
 int
 ffgdess(fptr,colnum,frow,nrows,repeat,offset,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	long frow
 	long nrows
@@ -5189,7 +5337,7 @@ ffgdess(fptr,colnum,frow,nrows,repeat,offset,status)
 		Astro::FITS::CFITSIO::fits_read_descripts = 1
 		fitsfilePtr::read_descripts = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4) != &PL_sv_undef) {
 				SvGROW(ST(4),nrows*sizeof_datatype(TLONG));
 				repeat = (long*)SvPV(ST(4),PL_na);
@@ -5203,14 +5351,14 @@ ffgdess(fptr,colnum,frow,nrows,repeat,offset,status)
 			}
 			else
 				offset = get_mortalspace(nrows,TLONG);
-			RETVAL=ffgdess(fptr,colnum,frow,nrows,repeat,offset,&status);
+			RETVAL=ffgdess(fptr->fptr,colnum,frow,nrows,repeat,offset,&status);
 		}
 		else {
 			repeat = get_mortalspace(nrows,TLONG);
 			offset = get_mortalspace(nrows,TLONG);
-			RETVAL=ffgdess(fptr,colnum,frow,nrows,repeat,offset,&status);
-			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),repeat,nrows,TLONG);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),offset,nrows,TLONG);
+			RETVAL=ffgdess(fptr->fptr,colnum,frow,nrows,repeat,offset,&status);
+			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),repeat,nrows,TLONG,fptr->perlyunpacking);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),offset,nrows,TLONG,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -5230,7 +5378,7 @@ ffgmsg(err_msg)
 
 int
 ffggpb(fptr,group,felem,nelem,array,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5240,14 +5388,14 @@ ffggpb(fptr,group,felem,nelem,array,status)
 		Astro::FITS::CFITSIO::fits_read_grppar_byt = 1
 		fitsfilePtr::read_grppar_byt = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(4),nelem*sizeof_datatype(TBYTE));
-			RETVAL=ffggpb(fptr,group,felem,nelem,(byte*)SvPV(ST(4),PL_na),&status);
+			RETVAL=ffggpb(fptr->fptr,group,felem,nelem,(byte*)SvPV(ST(4),PL_na),&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TBYTE);
-			RETVAL=ffggpb(fptr,group,felem,nelem,array,&status);
-			unpack1D(ST(4),array,nelem,TBYTE);
+			RETVAL=ffggpb(fptr->fptr,group,felem,nelem,array,&status);
+			unpack1D(ST(4),array,nelem,TBYTE,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -5255,7 +5403,7 @@ ffggpb(fptr,group,felem,nelem,array,status)
 
 int
 ffggpi(fptr,group,felem,nelem,array,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5265,14 +5413,14 @@ ffggpi(fptr,group,felem,nelem,array,status)
 		Astro::FITS::CFITSIO::fits_read_grppar_sht = 1
 		fitsfilePtr::read_grppar_sht = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(4),nelem*sizeof_datatype(TSHORT));
-			RETVAL=ffggpi(fptr,group,felem,nelem,(short*)SvPV(ST(4),PL_na),&status);
+			RETVAL=ffggpi(fptr->fptr,group,felem,nelem,(short*)SvPV(ST(4),PL_na),&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TSHORT);
-			RETVAL=ffggpi(fptr,group,felem,nelem,array,&status);
-			unpack1D(ST(4),array,nelem,TSHORT);
+			RETVAL=ffggpi(fptr->fptr,group,felem,nelem,array,&status);
+			unpack1D(ST(4),array,nelem,TSHORT,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -5280,7 +5428,7 @@ ffggpi(fptr,group,felem,nelem,array,status)
 
 int
 ffggpui(fptr,group,felem,nelem,array,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5290,14 +5438,14 @@ ffggpui(fptr,group,felem,nelem,array,status)
 		Astro::FITS::CFITSIO::fits_read_grppar_usht = 1
 		fitsfilePtr::read_grppar_usht = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(4),nelem*sizeof_datatype(TUSHORT));
-			RETVAL=ffggpui(fptr,group,felem,nelem,(unsigned short*)SvPV(ST(4),PL_na),&status);
+			RETVAL=ffggpui(fptr->fptr,group,felem,nelem,(unsigned short*)SvPV(ST(4),PL_na),&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TUSHORT);
-			RETVAL=ffggpui(fptr,group,felem,nelem,array,&status);
-			unpack1D(ST(4),array,nelem,TUSHORT);
+			RETVAL=ffggpui(fptr->fptr,group,felem,nelem,array,&status);
+			unpack1D(ST(4),array,nelem,TUSHORT,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -5305,7 +5453,7 @@ ffggpui(fptr,group,felem,nelem,array,status)
 
 int
 ffggpk(fptr,group,felem,nelem,array,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5315,14 +5463,14 @@ ffggpk(fptr,group,felem,nelem,array,status)
 		Astro::FITS::CFITSIO::fits_read_grppar_int = 1
 		fitsfilePtr::read_grppar_int = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(4),nelem*sizeof_datatype(TINT));
-			RETVAL=ffggpk(fptr,group,felem,nelem,(int*)SvPV(ST(4),PL_na),&status);
+			RETVAL=ffggpk(fptr->fptr,group,felem,nelem,(int*)SvPV(ST(4),PL_na),&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TINT);
-			RETVAL=ffggpk(fptr,group,felem,nelem,array,&status);
-			unpack1D(ST(4),array,nelem,TINT);
+			RETVAL=ffggpk(fptr->fptr,group,felem,nelem,array,&status);
+			unpack1D(ST(4),array,nelem,TINT,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -5330,7 +5478,7 @@ ffggpk(fptr,group,felem,nelem,array,status)
 
 int
 ffggpuk(fptr,group,felem,nelem,array,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5340,14 +5488,14 @@ ffggpuk(fptr,group,felem,nelem,array,status)
 		Astro::FITS::CFITSIO::fits_read_grppar_uint = 1
 		fitsfilePtr::read_grppar_uint = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(4),nelem*sizeof_datatype(TUINT));
-			RETVAL=ffggpuk(fptr,group,felem,nelem,(unsigned int*)SvPV(ST(4),PL_na),&status);
+			RETVAL=ffggpuk(fptr->fptr,group,felem,nelem,(unsigned int*)SvPV(ST(4),PL_na),&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TUINT);
-			RETVAL=ffggpuk(fptr,group,felem,nelem,array,&status);
-			unpack1D(ST(4),array,nelem,TUINT);
+			RETVAL=ffggpuk(fptr->fptr,group,felem,nelem,array,&status);
+			unpack1D(ST(4),array,nelem,TUINT,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -5355,7 +5503,7 @@ ffggpuk(fptr,group,felem,nelem,array,status)
 
 int
 ffggpj(fptr,group,felem,nelem,array,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5365,14 +5513,14 @@ ffggpj(fptr,group,felem,nelem,array,status)
 		Astro::FITS::CFITSIO::fits_read_grppar_lng = 1
 		fitsfilePtr::read_grppar_lng = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(4),nelem*sizeof_datatype(TLONG));
-			RETVAL=ffggpj(fptr,group,felem,nelem,(long*)SvPV(ST(4),PL_na),&status);
+			RETVAL=ffggpj(fptr->fptr,group,felem,nelem,(long*)SvPV(ST(4),PL_na),&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TLONG);
-			RETVAL=ffggpj(fptr,group,felem,nelem,array,&status);
-			unpack1D(ST(4),array,nelem,TLONG);
+			RETVAL=ffggpj(fptr->fptr,group,felem,nelem,array,&status);
+			unpack1D(ST(4),array,nelem,TLONG,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -5380,7 +5528,7 @@ ffggpj(fptr,group,felem,nelem,array,status)
 
 int
 ffggpuj(fptr,group,felem,nelem,array,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5390,14 +5538,14 @@ ffggpuj(fptr,group,felem,nelem,array,status)
 		Astro::FITS::CFITSIO::fits_read_grppar_ulng = 1
 		fitsfilePtr::read_grppar_ulng = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(4),nelem*sizeof_datatype(TULONG));
-			RETVAL=ffggpuj(fptr,group,felem,nelem,(unsigned long*)SvPV(ST(4),PL_na),&status);
+			RETVAL=ffggpuj(fptr->fptr,group,felem,nelem,(unsigned long*)SvPV(ST(4),PL_na),&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TULONG);
-			RETVAL=ffggpuj(fptr,group,felem,nelem,array,&status);
-			unpack1D(ST(4),array,nelem,TULONG);
+			RETVAL=ffggpuj(fptr->fptr,group,felem,nelem,array,&status);
+			unpack1D(ST(4),array,nelem,TULONG,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -5405,7 +5553,7 @@ ffggpuj(fptr,group,felem,nelem,array,status)
 
 int
 ffggpe(fptr,group,felem,nelem,array,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5415,14 +5563,14 @@ ffggpe(fptr,group,felem,nelem,array,status)
 		Astro::FITS::CFITSIO::fits_read_grppar_flt = 1
 		fitsfilePtr::read_grppar_flt = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(4),nelem*sizeof_datatype(TFLOAT));
-			RETVAL=ffggpe(fptr,group,felem,nelem,(float*)SvPV(ST(4),PL_na),&status);
+			RETVAL=ffggpe(fptr->fptr,group,felem,nelem,(float*)SvPV(ST(4),PL_na),&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TFLOAT);
-			RETVAL=ffggpe(fptr,group,felem,nelem,array,&status);
-			unpack1D(ST(4),array,nelem,TFLOAT);
+			RETVAL=ffggpe(fptr->fptr,group,felem,nelem,array,&status);
+			unpack1D(ST(4),array,nelem,TFLOAT,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -5430,7 +5578,7 @@ ffggpe(fptr,group,felem,nelem,array,status)
 
 int
 ffggpd(fptr,group,felem,nelem,array,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5440,14 +5588,14 @@ ffggpd(fptr,group,felem,nelem,array,status)
 		Astro::FITS::CFITSIO::fits_read_grppar_dbl = 1
 		fitsfilePtr::read_grppar_dbl = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(4),nelem*sizeof_datatype(TDOUBLE));
-			RETVAL=ffggpd(fptr,group,felem,nelem,(double*)SvPV(ST(4),PL_na),&status);
+			RETVAL=ffggpd(fptr->fptr,group,felem,nelem,(double*)SvPV(ST(4),PL_na),&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TDOUBLE);
-			RETVAL=ffggpd(fptr,group,felem,nelem,array,&status);
-			unpack1D(ST(4),array,nelem,TDOUBLE);
+			RETVAL=ffggpd(fptr->fptr,group,felem,nelem,array,&status);
+			unpack1D(ST(4),array,nelem,TDOUBLE,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -5455,7 +5603,7 @@ ffggpd(fptr,group,felem,nelem,array,status)
 
 int
 ffgpv(fptr,datatype,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int datatype
 	long felem
 	long nelem
@@ -5467,14 +5615,14 @@ ffgpv(fptr,datatype,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_img = 1
 		fitsfilePtr::read_img = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nelem*sizeof_datatype(datatype));
-			RETVAL=ffgpv(fptr,datatype,felem,nelem,pack1D(nulval,datatype),(void*)SvPV(ST(5),PL_na),&anynul,&status);
+			RETVAL=ffgpv(fptr->fptr,datatype,felem,nelem,pack1D(nulval,datatype),(void*)SvPV(ST(5),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,datatype);
-			RETVAL=ffgpv(fptr,datatype,felem,nelem,pack1D(nulval,datatype),array,&anynul,&status);
-			unpack1D(ST(5),array,nelem,datatype);
+			RETVAL=ffgpv(fptr->fptr,datatype,felem,nelem,pack1D(nulval,datatype),array,&anynul,&status);
+			unpack1D(ST(5),array,nelem,datatype,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5513,7 +5661,7 @@ ffgics(fptr,xrefval,yrefval,xrefpix,yrefpix,xinc,yinc,rot,coordtype,status)
 
 int
 ffgpvb(fptr,group,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5525,14 +5673,14 @@ ffgpvb(fptr,group,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_img_byt = 1
 		fitsfilePtr::read_img_byt = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nelem*sizeof_datatype(TBYTE));
-			RETVAL=ffgpvb(fptr,group,felem,nelem,nulval,(byte*)SvPV(ST(5),PL_na),&anynul,&status);
+			RETVAL=ffgpvb(fptr->fptr,group,felem,nelem,nulval,(byte*)SvPV(ST(5),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TBYTE);
-			RETVAL=ffgpvb(fptr,group,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(5),array,nelem,TBYTE);
+			RETVAL=ffgpvb(fptr->fptr,group,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(5),array,nelem,TBYTE,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5541,7 +5689,7 @@ ffgpvb(fptr,group,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgpvi(fptr,group,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5553,14 +5701,14 @@ ffgpvi(fptr,group,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_img_sht = 1
 		fitsfilePtr::read_img_sht = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nelem*sizeof_datatype(TSHORT));
-			RETVAL=ffgpvi(fptr,group,felem,nelem,nulval,(short*)SvPV(ST(5),PL_na),&anynul,&status);
+			RETVAL=ffgpvi(fptr->fptr,group,felem,nelem,nulval,(short*)SvPV(ST(5),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TSHORT);
-			RETVAL=ffgpvi(fptr,group,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(5),array,nelem,TSHORT);
+			RETVAL=ffgpvi(fptr->fptr,group,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(5),array,nelem,TSHORT,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5569,7 +5717,7 @@ ffgpvi(fptr,group,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgpvui(fptr,group,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5581,14 +5729,14 @@ ffgpvui(fptr,group,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_img_usht = 1
 		fitsfilePtr::read_img_usht = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nelem*sizeof_datatype(TUSHORT));
-			RETVAL=ffgpvui(fptr,group,felem,nelem,nulval,(unsigned short*)SvPV(ST(5),PL_na),&anynul,&status);
+			RETVAL=ffgpvui(fptr->fptr,group,felem,nelem,nulval,(unsigned short*)SvPV(ST(5),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TUSHORT);
-			RETVAL=ffgpvui(fptr,group,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(5),array,nelem,TUSHORT);
+			RETVAL=ffgpvui(fptr->fptr,group,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(5),array,nelem,TUSHORT,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5597,7 +5745,7 @@ ffgpvui(fptr,group,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgpvk(fptr,group,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5609,14 +5757,14 @@ ffgpvk(fptr,group,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_img_int = 1
 		fitsfilePtr::read_img_int = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nelem*sizeof_datatype(TINT));
-			RETVAL=ffgpvk(fptr,group,felem,nelem,nulval,(int*)SvPV(ST(5),PL_na),&anynul,&status);
+			RETVAL=ffgpvk(fptr->fptr,group,felem,nelem,nulval,(int*)SvPV(ST(5),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TINT);
-			RETVAL=ffgpvk(fptr,group,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(5),array,nelem,TINT);
+			RETVAL=ffgpvk(fptr->fptr,group,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(5),array,nelem,TINT,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5625,7 +5773,7 @@ ffgpvk(fptr,group,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgpvuk(fptr,group,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5637,14 +5785,14 @@ ffgpvuk(fptr,group,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_img_uint = 1
 		fitsfilePtr::read_img_uint = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nelem*sizeof_datatype(TUINT));
-			RETVAL=ffgpvuk(fptr,group,felem,nelem,nulval,(unsigned int*)SvPV(ST(5),PL_na),&anynul,&status);
+			RETVAL=ffgpvuk(fptr->fptr,group,felem,nelem,nulval,(unsigned int*)SvPV(ST(5),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TUINT);
-			RETVAL=ffgpvuk(fptr,group,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(5),array,nelem,TUINT);
+			RETVAL=ffgpvuk(fptr->fptr,group,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(5),array,nelem,TUINT,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5653,7 +5801,7 @@ ffgpvuk(fptr,group,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgpvj(fptr,group,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5665,14 +5813,14 @@ ffgpvj(fptr,group,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_img_lng = 1
 		fitsfilePtr::read_img_lng = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nelem*sizeof_datatype(TLONG));
-			RETVAL=ffgpvj(fptr,group,felem,nelem,nulval,(long*)SvPV(ST(5),PL_na),&anynul,&status);
+			RETVAL=ffgpvj(fptr->fptr,group,felem,nelem,nulval,(long*)SvPV(ST(5),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TLONG);
-			RETVAL=ffgpvj(fptr,group,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(5),array,nelem,TLONG);
+			RETVAL=ffgpvj(fptr->fptr,group,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(5),array,nelem,TLONG,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5681,7 +5829,7 @@ ffgpvj(fptr,group,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgpvuj(fptr,group,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5693,14 +5841,14 @@ ffgpvuj(fptr,group,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_img_ulng = 1
 		fitsfilePtr::read_img_ulng = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nelem*sizeof_datatype(TULONG));
-			RETVAL=ffgpvuj(fptr,group,felem,nelem,nulval,(unsigned long*)SvPV(ST(5),PL_na),&anynul,&status);
+			RETVAL=ffgpvuj(fptr->fptr,group,felem,nelem,nulval,(unsigned long*)SvPV(ST(5),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TULONG);
-			RETVAL=ffgpvuj(fptr,group,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(5),array,nelem,TULONG);
+			RETVAL=ffgpvuj(fptr->fptr,group,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(5),array,nelem,TULONG,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5709,7 +5857,7 @@ ffgpvuj(fptr,group,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgpve(fptr,group,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5721,14 +5869,14 @@ ffgpve(fptr,group,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_img_flt = 1
 		fitsfilePtr::read_img_flt = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nelem*sizeof_datatype(TFLOAT));
-			RETVAL=ffgpve(fptr,group,felem,nelem,nulval,(float*)SvPV(ST(5),PL_na),&anynul,&status);
+			RETVAL=ffgpve(fptr->fptr,group,felem,nelem,nulval,(float*)SvPV(ST(5),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TFLOAT);
-			RETVAL=ffgpve(fptr,group,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(5),array,nelem,TFLOAT);
+			RETVAL=ffgpve(fptr->fptr,group,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(5),array,nelem,TFLOAT,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5737,7 +5885,7 @@ ffgpve(fptr,group,felem,nelem,nulval,array,anynul,status)
 
 int
 ffgpvd(fptr,group,felem,nelem,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5749,14 +5897,14 @@ ffgpvd(fptr,group,felem,nelem,nulval,array,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_img_dbl = 1
 		fitsfilePtr::read_img_dbl = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nelem*sizeof_datatype(TDOUBLE));
-			RETVAL=ffgpvd(fptr,group,felem,nelem,nulval,(double*)SvPV(ST(5),PL_na),&anynul,&status);
+			RETVAL=ffgpvd(fptr->fptr,group,felem,nelem,nulval,(double*)SvPV(ST(5),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TDOUBLE);
-			RETVAL=ffgpvd(fptr,group,felem,nelem,nulval,array,&anynul,&status);
-			unpack1D(ST(5),array,nelem,TDOUBLE);
+			RETVAL=ffgpvd(fptr->fptr,group,felem,nelem,nulval,array,&anynul,&status);
+			unpack1D(ST(5),array,nelem,TDOUBLE,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5765,7 +5913,7 @@ ffgpvd(fptr,group,felem,nelem,nulval,array,anynul,status)
 
 int
 ffghpr(fptr,simple,bitpix,naxis,naxes,pcount,gcount,extend,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int simple = NO_INIT
 	int bitpix = NO_INIT
 	int naxis = NO_INIT
@@ -5780,18 +5928,19 @@ ffghpr(fptr,simple,bitpix,naxis,naxes,pcount,gcount,extend,status)
 	CODE:
 
 		if (ST(4)!=&PL_sv_undef) { /* caller wants naxes to be set */
-			ffghpr(fptr,0,NULL,NULL,&naxis,NULL,NULL,NULL,NULL,&status);
+			ffghpr(fptr->fptr,0,NULL,NULL,&naxis,NULL,NULL,NULL,NULL,&status);
 			naxes = get_mortalspace(naxis,TLONG);
 		} else {
 			naxes = NULL;
 			naxis = 0;
 		}
-		RETVAL=ffghpr(fptr,naxis,&simple,&bitpix,&naxis,naxes,&pcount,&gcount,&extend,&status);
+		RETVAL=ffghpr(fptr->fptr,naxis,&simple,&bitpix,&naxis,naxes,&pcount,&gcount,&extend,&status);
 
 		if (ST(1)!=&PL_sv_undef) sv_setiv(ST(1),simple);
 		if (ST(2)!=&PL_sv_undef) sv_setiv(ST(2),bitpix);
 		if (ST(3)!=&PL_sv_undef) sv_setiv(ST(3),naxis);
-		if (ST(4)!=&PL_sv_undef) unpack1D(ST(4),naxes,naxis,TLONG);
+		if (ST(4)!=&PL_sv_undef) unpack1D(ST(4),naxes,naxis,TLONG,
+						  fptr->perlyunpacking);
 		if (ST(5)!=&PL_sv_undef) sv_setiv(ST(5),pcount);
 		if (ST(6)!=&PL_sv_undef) sv_setiv(ST(6),gcount);
 		if (ST(7)!=&PL_sv_undef) sv_setiv(ST(7),extend);
@@ -5801,7 +5950,7 @@ ffghpr(fptr,simple,bitpix,naxis,naxes,pcount,gcount,extend,status)
 
 int
 ffgpf(fptr,datatype,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int datatype
 	long felem
 	long nelem
@@ -5813,7 +5962,7 @@ ffgpf(fptr,datatype,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_imgnull = 1
 		fitsfilePtr::read_imgnull = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4)!=&PL_sv_undef) {
 				SvGROW(ST(4),nelem*sizeof_datatype(datatype));
 				array = (void*)SvPV(ST(4),PL_na);
@@ -5826,17 +5975,17 @@ ffgpf(fptr,datatype,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpf(fptr,datatype,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgpf(fptr->fptr,datatype,felem,nelem,array,nularray,&anynul,&status);
 
 		}
 		else {
 			array = get_mortalspace(nelem,datatype);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpf(fptr,datatype,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgpf(fptr->fptr,datatype,felem,nelem,array,nularray,&anynul,&status);
 			if (ST(4)!=&PL_sv_undef)
-				unpack1D(ST(4),array,nelem,datatype);
+				unpack1D(ST(4),array,nelem,datatype,fptr->perlyunpacking);
 			if (ST(5)!=&PL_sv_undef)
-				unpack1D(ST(5),nularray,nelem,TLOGICAL);
+				unpack1D(ST(5),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(6)!=&PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5845,7 +5994,7 @@ ffgpf(fptr,datatype,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgpfb(fptr,group,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5857,7 +6006,7 @@ ffgpfb(fptr,group,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_imgnull_byt = 1
 		fitsfilePtr::read_imgnull_byt = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4) != &PL_sv_undef) {
 				SvGROW(ST(4),nelem*sizeof_datatype(TBYTE));
 				array = (byte*)SvPV(ST(4),PL_na);
@@ -5870,14 +6019,14 @@ ffgpfb(fptr,group,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfb(fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgpfb(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TBYTE);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfb(fptr,group,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TBYTE);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL);
+			RETVAL=ffgpfb(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TBYTE,fptr->perlyunpacking);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5886,7 +6035,7 @@ ffgpfb(fptr,group,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgpfi(fptr,group,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5898,7 +6047,7 @@ ffgpfi(fptr,group,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_imgnull_sht = 1
 		fitsfilePtr::read_imgnull_sht = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4) != &PL_sv_undef) {
 				SvGROW(ST(4),nelem*sizeof_datatype(TSHORT));
 				array = (short*)SvPV(ST(4),PL_na);
@@ -5911,14 +6060,14 @@ ffgpfi(fptr,group,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfi(fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgpfi(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TSHORT);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfi(fptr,group,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TSHORT);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL);
+			RETVAL=ffgpfi(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TSHORT,fptr->perlyunpacking);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5927,7 +6076,7 @@ ffgpfi(fptr,group,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgpfui(fptr,group,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5939,7 +6088,7 @@ ffgpfui(fptr,group,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_imgnull_usht = 1
 		fitsfilePtr::read_imgnull_usht = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4) != &PL_sv_undef) {
 				SvGROW(ST(4),nelem*sizeof_datatype(TUSHORT));
 				array = (unsigned short*)SvPV(ST(4),PL_na);
@@ -5952,14 +6101,14 @@ ffgpfui(fptr,group,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfui(fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgpfui(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TUSHORT);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfui(fptr,group,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TUSHORT);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL);
+			RETVAL=ffgpfui(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TUSHORT,fptr->perlyunpacking);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -5968,7 +6117,7 @@ ffgpfui(fptr,group,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgpfk(fptr,group,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -5980,7 +6129,7 @@ ffgpfk(fptr,group,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_imgnull_int = 1
 		fitsfilePtr::read_imgnull_int = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4) != &PL_sv_undef) {
 				SvGROW(ST(4),nelem*sizeof_datatype(TINT));
 				array = (int*)SvPV(ST(4),PL_na);
@@ -5993,14 +6142,14 @@ ffgpfk(fptr,group,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfk(fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgpfk(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TINT);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfk(fptr,group,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TINT);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL);
+			RETVAL=ffgpfk(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TINT,fptr->perlyunpacking);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -6009,7 +6158,7 @@ ffgpfk(fptr,group,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgpfuk(fptr,group,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -6021,7 +6170,7 @@ ffgpfuk(fptr,group,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_imgnull_uint = 1
 		fitsfilePtr::read_imgnull_uint = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4) != &PL_sv_undef) {
 				SvGROW(ST(4),nelem*sizeof_datatype(TUINT));
 				array = (unsigned int*)SvPV(ST(4),PL_na);
@@ -6034,14 +6183,14 @@ ffgpfuk(fptr,group,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfuk(fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgpfuk(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TUINT);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfuk(fptr,group,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TUINT);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL);
+			RETVAL=ffgpfuk(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TUINT,fptr->perlyunpacking);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -6050,7 +6199,7 @@ ffgpfuk(fptr,group,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgpfj(fptr,group,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -6062,7 +6211,7 @@ ffgpfj(fptr,group,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_imgnull_lng = 1
 		fitsfilePtr::read_imgnull_lng = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4) != &PL_sv_undef) {
 				SvGROW(ST(4),nelem*sizeof_datatype(TLONG));
 				array = (long*)SvPV(ST(4),PL_na);
@@ -6075,14 +6224,14 @@ ffgpfj(fptr,group,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfj(fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgpfj(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TLONG);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfj(fptr,group,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TLONG);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL);
+			RETVAL=ffgpfj(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TLONG,fptr->perlyunpacking);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -6091,7 +6240,7 @@ ffgpfj(fptr,group,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgpfuj(fptr,group,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -6103,7 +6252,7 @@ ffgpfuj(fptr,group,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_imgnull_ulng = 1
 		fitsfilePtr::read_imgnull_ulng = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4) != &PL_sv_undef) {
 				SvGROW(ST(4),nelem*sizeof_datatype(TULONG));
 				array = (unsigned long*)SvPV(ST(4),PL_na);
@@ -6116,14 +6265,14 @@ ffgpfuj(fptr,group,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfuj(fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgpfuj(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TULONG);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfuj(fptr,group,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TBYTE);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL);
+			RETVAL=ffgpfuj(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TBYTE,fptr->perlyunpacking);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -6132,7 +6281,7 @@ ffgpfuj(fptr,group,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgpfe(fptr,group,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -6144,7 +6293,7 @@ ffgpfe(fptr,group,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_imgnull_flt = 1
 		fitsfilePtr::read_imgnull_flt = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4) != &PL_sv_undef) {
 				SvGROW(ST(4),nelem*sizeof_datatype(TFLOAT));
 				array = (float*)SvPV(ST(4),PL_na);
@@ -6157,14 +6306,14 @@ ffgpfe(fptr,group,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfe(fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgpfe(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TFLOAT);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfe(fptr,group,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TFLOAT);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL);
+			RETVAL=ffgpfe(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TFLOAT,fptr->perlyunpacking);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -6173,7 +6322,7 @@ ffgpfe(fptr,group,felem,nelem,array,nularray,anynul,status)
 
 int
 ffgpfd(fptr,group,felem,nelem,array,nularray,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long group
 	long felem
 	long nelem
@@ -6185,7 +6334,7 @@ ffgpfd(fptr,group,felem,nelem,array,nularray,anynul,status)
 		Astro::FITS::CFITSIO::fits_read_imgnull_dbl = 1
 		fitsfilePtr::read_imgnull_dbl = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4) != &PL_sv_undef) {
 				SvGROW(ST(4),nelem*sizeof_datatype(TDOUBLE));
 				array = (double*)SvPV(ST(4),PL_na);
@@ -6198,14 +6347,14 @@ ffgpfd(fptr,group,felem,nelem,array,nularray,anynul,status)
 			}
 			else
 				nularray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL=ffgpfd(fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			RETVAL=ffgpfd(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TDOUBLE);
 			nularray = get_mortalspace(nelem,TLOGICAL);
-				RETVAL=ffgpfd(fptr,group,felem,nelem,array,nularray,&anynul,&status);
-			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TDOUBLE);
-			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL);
+				RETVAL=ffgpfd(fptr->fptr,group,felem,nelem,array,nularray,&anynul,&status);
+			if (ST(4) != &PL_sv_undef) unpack1D(ST(4),array,nelem,TDOUBLE,fptr->perlyunpacking);
+			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(6) != &PL_sv_undef) sv_setiv(ST(6),anynul);
 	OUTPUT:
@@ -6461,7 +6610,7 @@ ffgkyn(fptr,keynum,keyname,value,comment,status)
 
 int
 ffgkns(fptr,keyname,nstart,nkeys,value,nfound,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	char * keyname
 	int nstart
 	int nkeys
@@ -6477,8 +6626,8 @@ ffgkns(fptr,keyname,nstart,nkeys,value,nfound,status)
 		value=get_mortalspace(nkeys,TSTRING);
 		for (i=0; i<nkeys; i++)
 			value[i] = get_mortalspace(FLEN_VALUE,TBYTE);
-		RETVAL=ffgkns(fptr,keyname,nstart,nkeys,value,&nfound,&status);
-		unpack1D(ST(4),value,(nkeys>nfound) ? nfound : nkeys,TSTRING);
+		RETVAL=ffgkns(fptr->fptr,keyname,nstart,nkeys,value,&nfound,&status);
+		unpack1D(ST(4),value,(nkeys>nfound) ? nfound : nkeys,TSTRING,fptr->perlyunpacking);
 	OUTPUT:
 		nfound
 		status
@@ -6486,7 +6635,7 @@ ffgkns(fptr,keyname,nstart,nkeys,value,nfound,status)
 
 int
 ffgknl(fptr,keyname,nstart,nkeys,value,nfound,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	char * keyname
 	int nstart
 	int nkeys
@@ -6498,8 +6647,8 @@ ffgknl(fptr,keyname,nstart,nkeys,value,nfound,status)
 		fitsfilePtr::read_keys_log = 2
 	CODE:
 		value=get_mortalspace(nkeys,TINT);
-		RETVAL=ffgknl(fptr,keyname,nstart,nkeys,value,&nfound,&status);
-		unpack1D(ST(4),value,(nkeys>nfound) ? nfound : nkeys,TINT);
+		RETVAL=ffgknl(fptr->fptr,keyname,nstart,nkeys,value,&nfound,&status);
+		unpack1D(ST(4),value,(nkeys>nfound) ? nfound : nkeys,TINT,fptr->perlyunpacking);
 	OUTPUT:
 		nfound
 		status
@@ -6507,7 +6656,7 @@ ffgknl(fptr,keyname,nstart,nkeys,value,nfound,status)
 
 int
 ffgknj(fptr,keyname,nstart,nkeys,value,nfound,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	char * keyname
 	int nstart
 	int nkeys
@@ -6519,8 +6668,8 @@ ffgknj(fptr,keyname,nstart,nkeys,value,nfound,status)
 		fitsfilePtr::read_keys_lng = 2
 	CODE:
 		value=get_mortalspace(nkeys,TLONG);
-		RETVAL=ffgknj(fptr,keyname,nstart,nkeys,value,&nfound,&status);
-		unpack1D(ST(4),value,(nkeys>nfound) ? nfound : nkeys,TLONG);
+		RETVAL=ffgknj(fptr->fptr,keyname,nstart,nkeys,value,&nfound,&status);
+		unpack1D(ST(4),value,(nkeys>nfound) ? nfound : nkeys,TLONG,fptr->perlyunpacking);
 	OUTPUT:
 		nfound
 		status
@@ -6528,7 +6677,7 @@ ffgknj(fptr,keyname,nstart,nkeys,value,nfound,status)
 
 int
 ffgkne(fptr,keyname,nstart,nkeys,value,nfound,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	char * keyname
 	int nstart
 	int nkeys
@@ -6540,8 +6689,8 @@ ffgkne(fptr,keyname,nstart,nkeys,value,nfound,status)
 		fitsfilePtr::read_keys_flt = 2
 	CODE:
 		value=get_mortalspace(nkeys,TFLOAT);
-		RETVAL=ffgkne(fptr,keyname,nstart,nkeys,value,&nfound,&status);
-		unpack1D(ST(4),value,(nkeys>nfound) ? nfound : nkeys,TFLOAT);
+		RETVAL=ffgkne(fptr->fptr,keyname,nstart,nkeys,value,&nfound,&status);
+		unpack1D(ST(4),value,(nkeys>nfound) ? nfound : nkeys,TFLOAT,fptr->perlyunpacking);
 	OUTPUT:
 		nfound
 		status
@@ -6549,7 +6698,7 @@ ffgkne(fptr,keyname,nstart,nkeys,value,nfound,status)
 
 int
 ffgknd(fptr,keyname,nstart,nkeys,value,nfound,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	char * keyname
 	int nstart
 	int nkeys
@@ -6561,8 +6710,8 @@ ffgknd(fptr,keyname,nstart,nkeys,value,nfound,status)
 		fitsfilePtr::read_keys_dbl = 2
 	CODE:
 		value=get_mortalspace(nkeys,TDOUBLE);
-		RETVAL=ffgknd(fptr,keyname,nstart,nkeys,value,&nfound,&status);
-		unpack1D(ST(4),value,(nkeys>nfound) ? nfound : nkeys,TDOUBLE);
+		RETVAL=ffgknd(fptr->fptr,keyname,nstart,nkeys,value,&nfound,&status);
+		unpack1D(ST(4),value,(nkeys>nfound) ? nfound : nkeys,TDOUBLE,fptr->perlyunpacking);
 	OUTPUT:
 		nfound
 		status
@@ -6607,7 +6756,7 @@ ffgrec(fptr,keynum,card,status)
 
 int
 ffgsv(fptr, dtype, blc, trc, inc, nulval, array, anynul, status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int dtype
 	long * blc
 	long * trc
@@ -6628,9 +6777,9 @@ ffgsv(fptr, dtype, blc, trc, inc, nulval, array, anynul, status)
 			storage_dtype = TLOGICAL;
 
 		/* get the size of the image */
-		RETVAL = ffgidm(fptr, &naxis, &status);
+		RETVAL = ffgidm(fptr->fptr, &naxis, &status);
 		naxes = get_mortalspace(naxis, TLONG);
-		RETVAL = ffgisz(fptr, naxis, naxes, &status);
+		RETVAL = ffgisz(fptr->fptr, naxis, naxes, &status);
 
 		/* determine the number of pixels to be read */
 		ndata = 1;
@@ -6638,14 +6787,14 @@ ffgsv(fptr, dtype, blc, trc, inc, nulval, array, anynul, status)
 		ndata *= (trc[i]-blc[i]+1)/inc[i] +
 			(((trc[i]-blc[i]+1) % inc[i]) ? 1 : 0);
 
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(6),ndata*sizeof_datatype(storage_dtype));
-			RETVAL=ffgsv(fptr,dtype,blc,trc,inc,(nulval!=&PL_sv_undef ? pack1D(nulval,storage_dtype) : NULL),SvPV(ST(6),PL_na),&anynul,&status);
+			RETVAL=ffgsv(fptr->fptr,dtype,blc,trc,inc,(nulval!=&PL_sv_undef ? pack1D(nulval,storage_dtype) : NULL),SvPV(ST(6),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,storage_dtype);
-			RETVAL=ffgsv(fptr,dtype,blc,trc,inc,(nulval != &PL_sv_undef ? pack1D(nulval,storage_dtype) : NULL),array,&anynul,&status);
-			unpack1D(ST(6),array,ndata,storage_dtype);
+			RETVAL=ffgsv(fptr->fptr,dtype,blc,trc,inc,(nulval != &PL_sv_undef ? pack1D(nulval,storage_dtype) : NULL),array,&anynul,&status);
+			unpack1D(ST(6),array,ndata,storage_dtype,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef)
 			sv_setiv(ST(7),anynul);
@@ -6655,7 +6804,7 @@ ffgsv(fptr, dtype, blc, trc, inc, nulval, array, anynul, status)
 
 int
 ffgsvb(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -6677,14 +6826,14 @@ ffgsvb(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),ndata*sizeof_datatype(TBYTE));
-			RETVAL=ffgsvb(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(byte*)SvPV(ST(8),PL_na),&anynul,&status);
+			RETVAL=ffgsvb(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(byte*)SvPV(ST(8),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TBYTE);
-			RETVAL=ffgsvb(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
-			unpack1D(ST(8),array,ndata,TBYTE);
+			RETVAL=ffgsvb(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
+			unpack1D(ST(8),array,ndata,TBYTE,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -6693,7 +6842,7 @@ ffgsvb(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 
 int
 ffgsvi(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -6715,14 +6864,14 @@ ffgsvi(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),ndata*sizeof_datatype(TSHORT));
-			RETVAL=ffgsvi(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(short*)SvPV(ST(8),PL_na),&anynul,&status);
+			RETVAL=ffgsvi(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(short*)SvPV(ST(8),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TSHORT);
-			RETVAL=ffgsvi(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
-			unpack1D(ST(8),array,ndata,TSHORT);
+			RETVAL=ffgsvi(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
+			unpack1D(ST(8),array,ndata,TSHORT,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -6731,7 +6880,7 @@ ffgsvi(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 
 int
 ffgsvui(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -6753,14 +6902,14 @@ ffgsvui(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),ndata*sizeof_datatype(TUSHORT));
-			RETVAL=ffgsvui(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(unsigned short*)SvPV(ST(8),PL_na),&anynul,&status);
+			RETVAL=ffgsvui(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(unsigned short*)SvPV(ST(8),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TUSHORT);
-			RETVAL=ffgsvui(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
-			unpack1D(ST(8),array,ndata,TUSHORT);
+			RETVAL=ffgsvui(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
+			unpack1D(ST(8),array,ndata,TUSHORT,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -6769,7 +6918,7 @@ ffgsvui(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 
 int
 ffgsvk(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -6791,14 +6940,14 @@ ffgsvk(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),ndata*sizeof_datatype(TINT));
-			RETVAL=ffgsvk(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(int*)SvPV(ST(8),PL_na),&anynul,&status);
+			RETVAL=ffgsvk(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(int*)SvPV(ST(8),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TINT);
-			RETVAL=ffgsvk(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
-			unpack1D(ST(8),array,ndata,TINT);
+			RETVAL=ffgsvk(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
+			unpack1D(ST(8),array,ndata,TINT,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -6807,7 +6956,7 @@ ffgsvk(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 
 int
 ffgsvuk(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -6829,14 +6978,14 @@ ffgsvuk(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),ndata*sizeof_datatype(TUINT));
-			RETVAL=ffgsvuk(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(unsigned int*)SvPV(ST(8),PL_na),&anynul,&status);
+			RETVAL=ffgsvuk(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(unsigned int*)SvPV(ST(8),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TUINT);
-			RETVAL=ffgsvuk(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
-			unpack1D(ST(8),array,ndata,TUINT);
+			RETVAL=ffgsvuk(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
+			unpack1D(ST(8),array,ndata,TUINT,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -6845,7 +6994,7 @@ ffgsvuk(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 
 int
 ffgsvj(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -6867,14 +7016,14 @@ ffgsvj(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),ndata*sizeof_datatype(TLONG));
-			RETVAL=ffgsvj(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(long*)SvPV(ST(8),PL_na),&anynul,&status);
+			RETVAL=ffgsvj(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(long*)SvPV(ST(8),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TLONG);
-			RETVAL=ffgsvj(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
-			unpack1D(ST(8),array,ndata,TLONG);
+			RETVAL=ffgsvj(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
+			unpack1D(ST(8),array,ndata,TLONG,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -6883,7 +7032,7 @@ ffgsvj(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 
 int
 ffgsvuj(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -6905,14 +7054,14 @@ ffgsvuj(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),ndata*sizeof_datatype(TULONG));
-			RETVAL=ffgsvuj(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(unsigned long*)SvPV(ST(8),PL_na),&anynul,&status);
+			RETVAL=ffgsvuj(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(unsigned long*)SvPV(ST(8),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TULONG);
-			RETVAL=ffgsvuj(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
-			unpack1D(ST(8),array,ndata,TULONG);
+			RETVAL=ffgsvuj(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
+			unpack1D(ST(8),array,ndata,TULONG,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -6921,7 +7070,7 @@ ffgsvuj(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 
 int
 ffgsve(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -6943,14 +7092,14 @@ ffgsve(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),ndata*sizeof_datatype(TFLOAT));
-			RETVAL=ffgsve(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(float*)SvPV(ST(8),PL_na),&anynul,&status);
+			RETVAL=ffgsve(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(float*)SvPV(ST(8),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TFLOAT);
-			RETVAL=ffgsve(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
-			unpack1D(ST(8),array,ndata,TFLOAT);
+			RETVAL=ffgsve(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
+			unpack1D(ST(8),array,ndata,TFLOAT,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -6959,7 +7108,7 @@ ffgsve(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 
 int
 ffgsvd(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -6981,14 +7130,14 @@ ffgsvd(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(8),ndata*sizeof_datatype(TDOUBLE));
-			RETVAL=ffgsvd(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(double*)SvPV(ST(8),PL_na),&anynul,&status);
+			RETVAL=ffgsvd(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,(double*)SvPV(ST(8),PL_na),&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TDOUBLE);
-			RETVAL=ffgsvd(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
-			unpack1D(ST(8),array,ndata,TDOUBLE);
+			RETVAL=ffgsvd(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,&anynul,&status);
+			unpack1D(ST(8),array,ndata,TDOUBLE,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -6997,7 +7146,7 @@ ffgsvd(fptr,group,naxis,naxes,fpixels,lpixels,inc,nulval,array,anynul,status)
 
 int
 ffgsfb(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -7019,7 +7168,7 @@ ffgsfb(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(7) != &PL_sv_undef) {
 				SvGROW(ST(7),ndata*sizeof_datatype(TBYTE));
 				array = (byte*)SvPV(ST(7),PL_na);
@@ -7032,14 +7181,14 @@ ffgsfb(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 			}
 			else
 				nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfb(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			RETVAL=ffgsfb(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TBYTE);
 			nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfb(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
-			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TBYTE);
-			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL);
+			RETVAL=ffgsfb(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TBYTE,fptr->perlyunpacking);
+			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -7048,7 +7197,7 @@ ffgsfb(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 
 int
 ffgsfi(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -7070,7 +7219,7 @@ ffgsfi(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(7) != &PL_sv_undef) {
 				SvGROW(ST(7),ndata*sizeof_datatype(TSHORT));
 				array = (short*)SvPV(ST(7),PL_na);
@@ -7083,14 +7232,14 @@ ffgsfi(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 			}
 			else
 				nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfi(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			RETVAL=ffgsfi(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TSHORT);
 			nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfi(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
-			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TSHORT);
-			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL);
+			RETVAL=ffgsfi(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TSHORT,fptr->perlyunpacking);
+			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -7099,7 +7248,7 @@ ffgsfi(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 
 int
 ffgsfui(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -7121,7 +7270,7 @@ ffgsfui(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(7) != &PL_sv_undef) {
 				SvGROW(ST(7),ndata*sizeof_datatype(TUSHORT));
 				array = (unsigned short*)SvPV(ST(7),PL_na);
@@ -7134,14 +7283,14 @@ ffgsfui(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 			}
 			else
 				nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfui(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			RETVAL=ffgsfui(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TUSHORT);
 			nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfui(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
-			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TUSHORT);
-			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL);
+			RETVAL=ffgsfui(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TUSHORT,fptr->perlyunpacking);
+			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -7150,7 +7299,7 @@ ffgsfui(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 
 int
 ffgsfk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -7172,7 +7321,7 @@ ffgsfk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(7) != &PL_sv_undef) {
 				SvGROW(ST(7),ndata*sizeof_datatype(TINT));
 				array = (int*)SvPV(ST(7),PL_na);
@@ -7185,14 +7334,14 @@ ffgsfk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 			}
 			else
 				nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			RETVAL=ffgsfk(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TINT);
 			nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
-			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TINT);
-			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL);
+			RETVAL=ffgsfk(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TINT,fptr->perlyunpacking);
+			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -7201,7 +7350,7 @@ ffgsfk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 
 int
 ffgsfuk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -7223,7 +7372,7 @@ ffgsfuk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(7) != &PL_sv_undef) {
 				SvGROW(ST(7),ndata*sizeof_datatype(TUINT));
 				array = (unsigned int*)SvPV(ST(7),PL_na);
@@ -7236,14 +7385,14 @@ ffgsfuk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 			}
 			else
 				nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfuk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			RETVAL=ffgsfuk(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TUINT);
 			nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfuk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
-			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TUINT);
-			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL);
+			RETVAL=ffgsfuk(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TUINT,fptr->perlyunpacking);
+			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -7252,7 +7401,7 @@ ffgsfuk(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 
 int
 ffgsfj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -7274,7 +7423,7 @@ ffgsfj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(7) != &PL_sv_undef) {
 				SvGROW(ST(7),ndata*sizeof_datatype(TLONG));
 				array = (long*)SvPV(ST(7),PL_na);
@@ -7287,14 +7436,14 @@ ffgsfj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 			}
 			else
 				nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			RETVAL=ffgsfj(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TLONG);
 			nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
-			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TLONG);
-			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL);
+			RETVAL=ffgsfj(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TLONG,fptr->perlyunpacking);
+			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -7303,7 +7452,7 @@ ffgsfj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 
 int
 ffgsfuj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -7325,7 +7474,7 @@ ffgsfuj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(7) != &PL_sv_undef) {
 				SvGROW(ST(7),ndata*sizeof_datatype(TULONG));
 				array = (unsigned long*)SvPV(ST(7),PL_na);
@@ -7338,14 +7487,14 @@ ffgsfuj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 			}
 			else
 				nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfuj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			RETVAL=ffgsfuj(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TULONG);
 			nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfuj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
-			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TULONG);
-			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL);
+			RETVAL=ffgsfuj(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TULONG,fptr->perlyunpacking);
+			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -7354,7 +7503,7 @@ ffgsfuj(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 
 int
 ffgsfe(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -7376,7 +7525,7 @@ ffgsfe(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(7) != &PL_sv_undef) {
 				SvGROW(ST(7),ndata*sizeof_datatype(TFLOAT));
 				array = (float*)SvPV(ST(7),PL_na);
@@ -7389,14 +7538,14 @@ ffgsfe(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 			}
 			else
 				nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfe(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			RETVAL=ffgsfe(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TFLOAT);
 			nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfe(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
-			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TFLOAT);
-			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL);
+			RETVAL=ffgsfe(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TFLOAT,fptr->perlyunpacking);
+			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -7405,7 +7554,7 @@ ffgsfe(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 
 int
 ffgsfd(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int group
 	int naxis
 	long * naxes
@@ -7427,7 +7576,7 @@ ffgsfd(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 		for (i=0; i<naxis; i++)
 			ndata *= (lpixels[i]-fpixels[i]+1)/inc[i] +
 				(((lpixels[i]-fpixels[i]+1) % inc[i]) ? 1 : 0);
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(7) != &PL_sv_undef) {
 				SvGROW(ST(7),ndata*sizeof_datatype(TDOUBLE));
 				array = (double*)SvPV(ST(7),PL_na);
@@ -7440,14 +7589,14 @@ ffgsfd(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,anynul,status)
 			}
 			else
 				nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfd(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			RETVAL=ffgsfd(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(ndata,TDOUBLE);
 			nularr = get_mortalspace(ndata,TLOGICAL);
-			RETVAL=ffgsfd(fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
-			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TDOUBLE);
-			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL);
+			RETVAL=ffgsfd(fptr->fptr,group,naxis,naxes,fpixels,lpixels,inc,array,nularr,&anynul,&status);
+			if (ST(7) != &PL_sv_undef) unpack1D(ST(7),array,ndata,TDOUBLE,fptr->perlyunpacking);
+			if (ST(8) != &PL_sv_undef) unpack1D(ST(8),nularr,ndata,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(9) != &PL_sv_undef) sv_setiv(ST(9),anynul);
 	OUTPUT:
@@ -7488,7 +7637,7 @@ ffgtcs(fptr,xcol,ycol,xrefval,yrefval,xrefpix,yrefpix,xinc,yinc,rot,coordtype,st
 
 int
 ffgtbb(fptr,frow,fchar,nchars,values,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	long frow
 	long fchar
 	long nchars
@@ -7498,14 +7647,14 @@ ffgtbb(fptr,frow,fchar,nchars,values,status)
 		Astro::FITS::CFITSIO::fits_read_tblbytes = 1
 		fitsfilePtr::read_tblbytes = 2
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(4),nchars*sizeof_datatype(TBYTE));
-			RETVAL=ffgtbb(fptr,frow,fchar,nchars,(byte*)SvPV(ST(4),PL_na),&status);
+			RETVAL=ffgtbb(fptr->fptr,frow,fchar,nchars,(byte*)SvPV(ST(4),PL_na),&status);
 		}
 		else {
 			values = get_mortalspace(nchars,TBYTE);
-			RETVAL=ffgtbb(fptr,frow,fchar,nchars,values,&status);
-			unpack1D(ST(4),values,nchars,TBYTE);
+			RETVAL=ffgtbb(fptr->fptr,frow,fchar,nchars,values,&status);
+			unpack1D(ST(4),values,nchars,TBYTE,fptr->perlyunpacking);
 		}
 	OUTPUT:
 		status
@@ -7513,7 +7662,7 @@ ffgtbb(fptr,frow,fchar,nchars,values,status)
 
 int
 ffgtdm(fptr,colnum,naxis,naxes,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int colnum
 	int naxis = NO_INIT
 	long * naxes = NO_INIT
@@ -7523,16 +7672,16 @@ ffgtdm(fptr,colnum,naxis,naxes,status)
 		fitsfilePtr::read_tdim = 2
 	CODE:
 		if (ST(3)!=&PL_sv_undef) {
-			ffgtdm(fptr,colnum,0,&naxis,NULL,&status);
+			ffgtdm(fptr->fptr,colnum,0,&naxis,NULL,&status);
 			naxes = get_mortalspace(naxis,TLONG);
 		}
 		else {
 			naxes = NULL;
 			naxis = 0;
 		}
-		RETVAL=ffgtdm(fptr,colnum,naxis,&naxis,naxes,&status);
+		RETVAL=ffgtdm(fptr->fptr,colnum,naxis,&naxis,naxes,&status);
 		if (ST(2)!=&PL_sv_undef) sv_setiv(ST(2),naxis);
-		if (ST(3)!=&PL_sv_undef) unpack1D(ST(3),naxes,naxis,TLONG);
+		if (ST(3)!=&PL_sv_undef) unpack1D(ST(3),naxes,naxis,TLONG,fptr->perlyunpacking);
 	OUTPUT:
 		status
 		RETVAL
@@ -7563,13 +7712,14 @@ ffgmrm(fptr,member,rmopt,status)
 int
 ffreopen(openfptr,newfptr,status)
 	fitsfile * openfptr
-	fitsfile * newfptr = NO_INIT
+	FitsFile * newfptr = NO_INIT
 	int status
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_reopen_file = 1
 		fitsfilePtr::reopen_file = 2
 	CODE:
-		RETVAL = ffreopen(openfptr,&newfptr,&status);
+		NewFitsFile(newfptr);
+		RETVAL = ffreopen(openfptr,&(newfptr->fptr),&status);
 		if (status > 0)
 			sv_setsv(ST(1), &PL_sv_undef);
 		else
@@ -7766,7 +7916,7 @@ ffs2tm(datestr,year,month,day,hour,minute,second,status)
 
 int
 fftexp(fptr,expr,datatype,nelem,naxis,naxes,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	char * expr
 	int datatype = NO_INIT
 	long nelem = NO_INIT
@@ -7778,18 +7928,18 @@ fftexp(fptr,expr,datatype,nelem,naxis,naxes,status)
 		fitsfilePtr::test_expr = 2
 	CODE:
 		if (ST(5)!=&PL_sv_undef) {
-			fftexp(fptr,expr,0,&datatype,&nelem,&naxis,NULL,&status);
+			fftexp(fptr->fptr,expr,0,&datatype,&nelem,&naxis,NULL,&status);
 			naxes = get_mortalspace(naxis,TLONG);
 		}
 		else {
 			naxes = NULL;
 			naxis = 0;
 		}
-		RETVAL=fftexp(fptr,expr,naxis,&datatype,&nelem,&naxis,naxes,&status);
+		RETVAL=fftexp(fptr->fptr,expr,naxis,&datatype,&nelem,&naxis,naxes,&status);
 		if (ST(2)!=&PL_sv_undef) sv_setiv(ST(2),datatype);
 		if (ST(3)!=&PL_sv_undef) sv_setiv(ST(3),nelem);
 		if (ST(4)!=&PL_sv_undef) sv_setiv(ST(4),naxis);
-		if (ST(5)!=&PL_sv_undef) unpack1D(ST(5),naxes,naxis,TLONG);
+		if (ST(5)!=&PL_sv_undef) unpack1D(ST(5),naxes,naxis,TLONG,fptr->perlyunpacking);
 	OUTPUT:
 		status
 		RETVAL
@@ -10079,7 +10229,7 @@ ffgtwcs(fptr,xcol,ycol,header,status)
 
 int
 ffgipr(fptr,bitbix,naxis,naxes,status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int bitpix = NO_INIT
 	int naxis = NO_INIT
 	long * naxes = NO_INIT
@@ -10089,17 +10239,17 @@ ffgipr(fptr,bitbix,naxis,naxes,status)
 		fitsfilePtr::get_img_parm = 2
 	CODE:
 		if (ST(3)!=&PL_sv_undef) {
-			RETVAL = ffgipr(fptr,0,&bitpix,&naxis,NULL,&status);
+			RETVAL = ffgipr(fptr->fptr,0,&bitpix,&naxis,NULL,&status);
 			naxes = (long *)get_mortalspace(naxis,TLONG);
 		}
 		else {
 			naxis = 0;
 			naxes = NULL;
 		}
-		RETVAL = ffgipr(fptr,naxis,&bitpix,&naxis,naxes,&status);
+		RETVAL = ffgipr(fptr->fptr,naxis,&bitpix,&naxis,naxes,&status);
 		if (ST(1)!=&PL_sv_undef) sv_setiv(ST(1),bitpix);
 		if (ST(2)!=&PL_sv_undef) sv_setiv(ST(2),naxis);
-		if (ST(3)!=&PL_sv_undef) unpack1D(ST(3),naxes,naxis,TLONG);
+		if (ST(3)!=&PL_sv_undef) unpack1D(ST(3),naxes,naxis,TLONG,fptr->perlyunpacking);
 	OUTPUT:
 		status
 		RETVAL
@@ -10112,7 +10262,7 @@ ffgkcl(card)
 
 int
 ffgpxv(fptr, dtype, fpix, nelem, nulval, array, anynul, status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int dtype
 	long * fpix
 	long nelem
@@ -10129,26 +10279,26 @@ ffgpxv(fptr, dtype, fpix, nelem, nulval, array, anynul, status)
 		OFF_T nelem_all;
 		int i;
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			SvGROW(ST(5),nelem*sizeof_datatype(dtype));
-			RETVAL = ffgpxv(fptr, dtype, fpix, nelem, (nulval!=&PL_sv_undef ? pack1D(nulval, dtype) : NULL), (void*)(SvPV(ST(5),PL_na)), &anynul, &status);
+			RETVAL = ffgpxv(fptr->fptr, dtype, fpix, nelem, (nulval!=&PL_sv_undef ? pack1D(nulval, dtype) : NULL), (void*)(SvPV(ST(5),PL_na)), &anynul, &status);
 		}
 		else {
 			/* find out how many elements are in the image,
 			 * allocate space, read, unpack
 			 */
-			RETVAL = ffgidm(fptr, &naxis, &status);
+			RETVAL = ffgidm(fptr->fptr, &naxis, &status);
 			if (status == 0) {
 				naxes = get_mortalspace(naxis, TLONG);
-				RETVAL = ffgisz(fptr, naxis, naxes, &status);
+				RETVAL = ffgisz(fptr->fptr, naxis, naxes, &status);
 				nelem_all = 1;
 				for (i=0; i<naxis; i++)
 					nelem_all *= naxes[i];
 				array=get_mortalspace(nelem_all,dtype);
-				RETVAL=ffgpxv(fptr, dtype, fpix, nelem, (nulval!=&PL_sv_undef ?  pack1D(nulval, dtype) : NULL), array, &anynul, &status);
+				RETVAL=ffgpxv(fptr->fptr, dtype, fpix, nelem, (nulval!=&PL_sv_undef ?  pack1D(nulval, dtype) : NULL), array, &anynul, &status);
 				if (status == 0) {
 					order_reverse(naxis, naxes);
-					unpackND(ST(5), array, naxis, naxes, dtype);
+					unpackND(ST(5), array, naxis, naxes, dtype,fptr->perlyunpacking);
 				}
 			}
 		}
@@ -10160,7 +10310,7 @@ ffgpxv(fptr, dtype, fpix, nelem, nulval, array, anynul, status)
 
 int
 ffgpxf(fptr, dtype, fpix, nelem, array, nullarray, anynul, status)
-	fitsfile * fptr
+	FitsFile * fptr
 	int dtype
 	long * fpix
 	long nelem
@@ -10177,7 +10327,7 @@ ffgpxf(fptr, dtype, fpix, nelem, array, nullarray, anynul, status)
 		OFF_T nelem_all;
 		int i;
 	CODE:
-		if (!PerlyUnpacking(-1)) {
+		if (!PERLYUNPACKING(fptr->perlyunpacking)) {
 			if (ST(4) != &PL_sv_undef) {
 				SvGROW(ST(4),nelem*sizeof_datatype(dtype));
 				array = (void*)(SvPV(ST(4),PL_na));
@@ -10190,28 +10340,28 @@ ffgpxf(fptr, dtype, fpix, nelem, array, nullarray, anynul, status)
 			}
 			else
 				nullarray = get_mortalspace(nelem,TLOGICAL);
-			RETVAL = ffgpxf(fptr,dtype,fpix,nelem,array,nullarray, &anynul,&status);
+			RETVAL = ffgpxf(fptr->fptr,dtype,fpix,nelem,array,nullarray, &anynul,&status);
 		}
 		else {
 			/* find out how many elements are in the image,
 			 * allocate space, read, unpack
 			 */
-			RETVAL = ffgidm(fptr, &naxis, &status);
+			RETVAL = ffgidm(fptr->fptr, &naxis, &status);
 			if (status == 0) {
 				naxes = get_mortalspace(naxis, TLONG);
-				RETVAL = ffgisz(fptr, naxis, naxes, &status);
+				RETVAL = ffgisz(fptr->fptr, naxis, naxes, &status);
 				nelem_all = 1;
 				for (i=0; i<naxis; i++)
 					nelem_all *= naxes[i];
 				array=get_mortalspace(nelem_all,dtype);
 				nullarray=get_mortalspace(nelem_all,TLOGICAL);
-				RETVAL=ffgpxf(fptr,dtype,fpix,nelem,array,nullarray,&anynul,&status);
+				RETVAL=ffgpxf(fptr->fptr,dtype,fpix,nelem,array,nullarray,&anynul,&status);
 				if (status == 0) {
 					order_reverse(naxis, naxes);
 					if (ST(4)!=&PL_sv_undef)
-						unpackND(ST(4),array,naxis,naxes,dtype);
+						unpackND(ST(4),array,naxis,naxes,dtype,fptr->perlyunpacking);
 					if (ST(5)!=&PL_sv_undef)
-						unpackND(ST(5),nullarray,naxis,naxes,TLOGICAL);
+						unpackND(ST(5),nullarray,naxis,naxes,TLOGICAL,fptr->perlyunpacking);
 				}
 			}
 		}

@@ -30,7 +30,7 @@ elif [ ! -f $cfitsio/testprog.std ]; then
 fi
 
 
-for f in testprog*pl;
+for f in testprog*pl ;
 do
 	echo perl $f \> testprog.lis
 	perl $f > testprog.lis

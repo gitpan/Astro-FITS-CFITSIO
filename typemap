@@ -3,7 +3,8 @@ TYPEMAP
 LONGLONG         T_IV
 cmp *            T_COMPLEXP
 dblcmp *         T_DBLCOMPLEXP
-fitsfile *       T_PTROBJ
+fitsfile *	 T_PTROBJ_fitsfile
+FitsFile *	 T_PTROBJ_FitsFile
 logical *        T_LOGICALP
 byte *           T_BYTEP
 unsigned short * T_USHORTP
@@ -67,6 +68,20 @@ T_STRING
 			$var = ($type)SvPV($arg,PL_na);
 	}
 
+T_PTROBJ_fitsfile
+	if (sv_derived_from($arg, \"fitsfilePtr\")) {
+	    $var = fitsfileSV($arg);
+        }
+        else
+            croak(\"$var is not of type fitsfilePtr\");
+
+T_PTROBJ_FitsFile
+	if (sv_derived_from($arg, \"fitsfilePtr\")) {
+            $var = FitsFileSV($arg);
+        }
+        else
+            croak(\"$var is not of type fitsfilePtr\");
+
 OUTPUT
 T_BYTE
 	sv_setiv($arg, (IV) $var);
@@ -79,3 +94,6 @@ T_FLOAT
 T_STRING
 	if ($var != NULL)
 		sv_setpv((SV *)$arg, $var);
+
+T_PTROBJ_FitsFile
+        sv_setref_pv($arg, \"fitsfilePtr\", (void*)$var);

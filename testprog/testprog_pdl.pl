@@ -257,7 +257,6 @@ print "\nValues read back from primary array (99 = null pixel)\n";
 print "The 1st, and every 4th pixel should be undefined:\n";
 
 $anynull = 0;
-
 $binarray = zeroes($npixels)->byte;
 $fptr->read_img_byt(1,1,$npixels,99,${$binarray->get_dataref},$anynull,$status);
 map printf(" %2d",$binarray->at($_)),(0..$npixels-1);

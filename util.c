@@ -14,6 +14,7 @@
 
 static int perly_unpacking = 1; /* state variable */
 
+
 /*
  * Get the width of a string column in an ASCII or binary table
  */
@@ -134,6 +135,7 @@ void* pack1D ( SV* arg, int datatype ) {
   int size;
   char * stringscalar;
   logical logscalar;
+  sbyte sbscalar;
   byte bscalar;
   unsigned short usscalar;
   short sscalar;
@@ -170,6 +172,10 @@ void* pack1D ( SV* arg, int datatype ) {
     case TLOGICAL:
       logscalar = SvIV(arg);
       sv_setpvn(work, (char *) &logscalar, size);
+      break;
+    case TSBYTE:
+      sbscalar = SvIV(arg);
+      sv_setpvn(work, (char *) &sbscalar, size);
       break;
     case TBYTE:
       bscalar = SvUV(arg);
@@ -264,6 +270,19 @@ void* pack1D ( SV* arg, int datatype ) {
 	  logscalar = (logical) SvIV(*work2);
 	}
 	sv_catpvn(work, (char *) &logscalar, size);
+      }
+      break;
+    case TSBYTE:
+      SvGROW(work, size * n);
+      for (i=0; i<n; i++) {
+	if ((work2=av_fetch(array,i,0)) == NULL)
+	  sbscalar = 0;
+	else {
+	  if (SvROK(*work2))
+	    goto errexit;
+	  sbscalar = (sbyte) SvIV(*work2);
+	}
+	sv_catpvn(work, (char *) &sbscalar, size);
       }
       break;
     case TBYTE:
@@ -433,6 +452,7 @@ void pack_element(SV* work, SV** arg, int datatype) {
 
   char * stringscalar;
   logical logscalar;
+  sbyte sbscalar;
   byte bscalar;
   unsigned short usscalar;
   short sscalar;
@@ -462,6 +482,10 @@ void pack_element(SV* work, SV** arg, int datatype) {
     case TLOGICAL:
       logscalar = arg ? SvIV(*arg) : 0;
       sv_catpvn(work, (char *) &logscalar, size);
+      break;
+    case TSBYTE:
+      sbscalar = arg ? SvIV(*arg) : 0;
+      sv_catpvn(work, (char *) &sbscalar, size);
       break;
     case TBYTE:
       bscalar = arg ? SvUV(*arg) : 0;
@@ -532,12 +556,12 @@ void pack_element(SV* work, SV** arg, int datatype) {
     croak("pack_element() - can only handle scalars or refs to N-D arrays of scalars");
 }
 
-void unpack2D( SV * arg, void * var, long *dims, int datatype) {
+void unpack2D( SV * arg, void * var, long *dims, int datatype, int perlyunpack) {
   long i,skip;
   AV *array;
   char * tmp_var = (char *)var;
 
-  if (!PerlyUnpacking(-1) && datatype != TSTRING) {
+  if (! PERLYUNPACKING(perlyunpack) && datatype != TSTRING) {
     unpack2scalar(arg,var,dims[0]*dims[1],datatype);
     return;
   }
@@ -547,18 +571,18 @@ void unpack2D( SV * arg, void * var, long *dims, int datatype) {
 
   skip = dims[1] * sizeof_datatype(datatype);
   for (i=0;i<dims[0];i++) {
-    unpack1D(*av_fetch(array,i,0),tmp_var,dims[1],datatype);
+    unpack1D(*av_fetch(array,i,0),tmp_var,dims[1],datatype,perlyunpack);
     tmp_var += skip;
   }
 }
 
-void unpack3D( SV * arg, void * var, long *dims, int datatype) {
+void unpack3D( SV * arg, void * var, long *dims, int datatype, int perlyunpack) {
   long i,j,skip;
   AV *array1,*array2;
   SV *tmp_sv;
   char *tmp_var = (char *)var;
 
-  if (!PerlyUnpacking(-1) && datatype != TSTRING) {
+  if (! PERLYUNPACKING(perlyunpack) && datatype != TSTRING) {
     unpack2scalar(arg,var,dims[0]*dims[1]*dims[2],datatype);
     return;
   }
@@ -572,7 +596,7 @@ void unpack3D( SV * arg, void * var, long *dims, int datatype) {
     coerce1D(tmp_sv,dims[1]);
     array2 = (AV*)SvRV(tmp_sv);
     for (j=0; j<dims[1]; j++) {
-      unpack1D(*av_fetch(array2,j,0),tmp_var,dims[2],datatype);
+      unpack1D(*av_fetch(array2,j,0),tmp_var,dims[2],datatype,perlyunpack);
       tmp_var += skip;
     }
   }
@@ -581,7 +605,8 @@ void unpack3D( SV * arg, void * var, long *dims, int datatype) {
 /*
  * This routine is known to have problems
  */
-void unpackND ( SV * arg, void * var, int ndims, long *dims, int datatype ) {
+void unpackND ( SV * arg, void * var, int ndims, long *dims, int datatype,
+		int perlyunpack ) {
   int i;
   OFF_T ndata, nbytes, written, *places, skip;
   AV **avs;
@@ -593,7 +618,7 @@ void unpackND ( SV * arg, void * var, int ndims, long *dims, int datatype ) {
     ndata *= dims[i];
   nbytes = ndata * sizeof_datatype(datatype);
 
-  if (!PerlyUnpacking(-1) && datatype != TSTRING) {
+  if (! PERLYUNPACKING(perlyunpack) && datatype != TSTRING) {
     unpack2scalar(arg,var,ndata,datatype);
     return;
   }
@@ -612,7 +637,7 @@ void unpackND ( SV * arg, void * var, int ndims, long *dims, int datatype ) {
     for (i=1;i<ndims-1;i++)
       avs[i] = (AV*)SvRV(*av_fetch(avs[i-1],places[i-1],0));
 
-    unpack1D(*av_fetch(avs[ndims-2],places[ndims-2],0),tmp_var,dims[ndims-1],datatype);
+    unpack1D(*av_fetch(avs[ndims-2],places[ndims-2],0),tmp_var,dims[ndims-1],datatype,perlyunpack);
     tmp_var += skip;
     written += skip;
 
@@ -667,6 +692,8 @@ void unpackScalar(SV * arg, void * var, int datatype) {
     sv_setpv(arg,(char *)var); break;
   case TLOGICAL:
     sv_setiv(arg,(IV)(*(logical *)var)); break;
+  case TSBYTE:
+    sv_setiv(arg,(IV)(*(sbyte *)var)); break;
   case TBYTE:
     sv_setuv(arg,(UV)(*(byte *)var)); break;
   case TUSHORT:
@@ -707,10 +734,12 @@ void unpackScalar(SV * arg, void * var, int datatype) {
   return;
 }
 
-void unpack1D ( SV * arg, void * var, long n, int datatype ) {
+void unpack1D ( SV * arg, void * var, long n, int datatype,
+		int perlyunpack ) {
 
   char ** stringvar;
   logical * logvar;
+  sbyte * sbvar;
   byte * bvar;
   unsigned short * usvar;
   short * svar;
@@ -725,7 +754,7 @@ void unpack1D ( SV * arg, void * var, long n, int datatype ) {
   AV *array;
   I32 i,m;
 
-  if (!PerlyUnpacking(-1) && datatype != TSTRING) {
+  if (!PERLYUNPACKING(perlyunpack) && datatype != TSTRING) {
     unpack2scalar(arg,var,n,datatype);
     return;
   }
@@ -749,6 +778,11 @@ void unpack1D ( SV * arg, void * var, long n, int datatype ) {
     logvar = (logical *) var;
     for(i=0; i<m; i++)
       av_store(array, i, newSViv( (IV)logvar[i] ));
+    break;
+  case TSBYTE:
+    sbvar = (sbyte *) var;
+    for(i=0; i<m; i++)
+      av_store(array, i, newSViv( (IV)sbvar[i] ));
     break;
   case TBYTE:
     bvar = (byte *) var;
@@ -893,6 +927,8 @@ int sizeof_datatype(int datatype) {
     return sizeof(char *);
   case TLOGICAL:
     return sizeof(logical);
+  case TSBYTE:
+    return sizeof(sbyte);
   case TBYTE:
     return sizeof(byte);
   case TUSHORT:
