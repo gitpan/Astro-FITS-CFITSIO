@@ -1,0 +1,46 @@
+Hello again,
+
+A new version of the Perl interface to William Pence's cfitsio
+subroutine library is available. For more information on the cfitsio
+subroutine library, see http://heasarc.gsfc.nasa.gov/fitsio
+
+The module name has changed from CFITSIO to Astro::FITS::CFITSIO.
+A final version of the old module is also being made available
+for the transition period - it simply aliases the CFITSIO symbol table
+to Astro::FITS::CFITSIO, and warns that the module has been replaced.
+
+New features in Astro::FITS::CFITSIO 1.00 include:
+
+* Added new cfitsio 2.300 and 2.400 routines:
+  fits_compress_heap
+  fits_test_heap
+  fits_compress_img
+  fits_decompress_img
+  fits_get_compression_type
+  fits_set_compression_type
+  fits_get_noise_bits
+  fits_set_noise_bits
+  fits_get_tile_dim
+  fits_set_tile_dim
+  fits_write_subset
+  constants GZIP_1, PLIO_1 and RICE_1
+
+You will need at least version 2.400 of the cfitsio library in order to
+build this module. Astro::FITS::CFITSIO has been tested on Linux (2.2.x,
+ix86, glibc 2.1) and Solaris 2.6 with perl 5.6.0 and perl 5.005,
+respectively.
+
+This version of CFITSIO.pm can be obtained at:
+  http://cxc.harvard.edu/~rpete/cfitsio/Astro-FITS-CFITSIO-1.00.tar.gz
+
+And also on your local CPAN mirror under:
+  authors/id/P/PR/PRATZLAFF/Astro-FITS-CFITSIO-1.00.tar.gz
+
+The final release of the original CFITSIO.pm can be found at
+  http://cxc.harvard.edu/~rpete/cfitsio/CFITSIO-0.96.tar.gz
+  authors/id/P/PR/PRATZLAFF/CFITSIO-0.96.tar.gz (CPAN mirrors)
+
+As always, you can find the latest version of CFITSIO.pm at
+  http://cxc.harvard.edu/~rpete/cfitsio
+
+-Pete Ratzlaff <pratzlaff@cfa.harvard.edu>
