@@ -1,3 +1,29 @@
+2004-08-16  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.pm: $VERSION = '1.0.3';
+
+2004-08-02  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.xs: add fits_file_exists() from cfitsio 2500.
+	fits_read_colnull_cmp() and fits_read_colnull_dblcmp() null arrays
+	should contain nelem as per cfitsio 2500 changes.
+
+	* Makefile.PL: add -I$ENV{CFITSIO}/include, -L$ENV{CFITSIO}/lib
+
+2004-04-08  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.xs: added AbortFitsFile macro to complement NewFitsFile
+	in cases where create/open of a file fails. FitsFile* output
+	typemap changed accordingly. The AbortFitsFile macro frees the
+	memory that NewFitsFile allocated, sets the argument to NULL, and
+	the output typemap will not bless the scalar - undef is returned
+	instead of an invalid FitsFile object (which DESTROY would croak
+	at).
+
+2004-04-07  Diab Jerius  <djerius@cfa.harvard.edu>
+
+	* CFITSIO.xs: LONGLONG_IMG constant added
+
 2004-03-25  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
 
 	* CFITSIO.pm: $VERSION = '1.02';

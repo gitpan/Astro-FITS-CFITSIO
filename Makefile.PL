@@ -3,8 +3,8 @@ use ExtUtils::MakeMaker;
 my ($inc, $libs);
 
 if (exists $ENV{CFITSIO}) {
-  $inc = "-I$ENV{CFITSIO}";
-  $libs = "-L$ENV{CFITSIO} -lcfitsio -lm";
+  $inc = "-I$ENV{CFITSIO} -I$ENV{CFITSIO}/include";
+  $libs = "-L$ENV{CFITSIO} -L$ENV{CFITSIO}/lib -lcfitsio -lm";
 }
 else {
   warn("CFITSIO environment variable not found, assuming /usr/local/cfitsio\n");

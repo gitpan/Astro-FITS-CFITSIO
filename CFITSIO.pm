@@ -1,5 +1,5 @@
 package Astro::FITS::CFITSIO;
-$VERSION = '1.02';
+$VERSION = '1.03';
 
 use strict;
 use Carp;
@@ -45,6 +45,7 @@ my %__names = (
 	       ffflsh => 'fits_flush_buffer',
 	       ffclos => 'fits_close_file',
 	       ffdelt => 'fits_delete_file',
+	       ffexist => 'fits_file_exists',
 	       ffflnm => 'fits_file_name',
 	       ffflmd => 'fits_file_mode',
 	       ffurlt => 'fits_url_type',
@@ -573,6 +574,7 @@ my @__constants = qw(
 		     KEY_NO_EXIST
 		     KEY_OUT_BOUNDS
 		     LONG_IMG
+		     LONGLONG_IMG
 		     MAXHDU
 		     MEMBER_NOT_FOUND
 		     MEMORY_ALLOCATION

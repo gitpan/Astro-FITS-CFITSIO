@@ -92,6 +92,7 @@ pre_test('ffopen');
 $status = 0;
 my $fptr;
 ffopen($fptr,'tq123x.kjl',READWRITE,$status);
+print "\nSTATUS = $status\n";
 post_test(104 == $status);
 
 # fits_create_file

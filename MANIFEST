@@ -27,3 +27,4 @@ testprog/testprog_longnames.pl
 testprog/testprog_pdl.pl
 testprog/runtests
 TODO
+META.yml                                 Module meta-data (added by MakeMaker)

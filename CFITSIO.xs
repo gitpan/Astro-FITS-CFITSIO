@@ -583,6 +583,12 @@ int arg;
 #else
 	    goto not_there;
 #endif
+	if (strEQ(name, "LONGLONG_IMG"))
+#ifdef LONGLONG_IMG
+	    return LONGLONG_IMG;
+#else
+	    goto not_there;
+#endif
 	break;
     case 'M':
 	if (strEQ(name, "MAXHDU"))
@@ -1008,7 +1014,7 @@ int arg;
 	    goto not_there;
 #endif
 	if (strEQ(name, "TSBYTE"))
-#ifdef TBYTE
+#ifdef TSBYTE
 	    return TSBYTE;
 #else
 	    goto not_there;
@@ -1295,9 +1301,15 @@ not_there:
 
 #define NewFitsFile(fptr) \
 do \
-{		New(0, fptr, 1, FitsFile);\
-		fptr->perlyunpacking = -1;\
-		fptr->is_open = 1;\
+{	New(0, fptr, 1, FitsFile);\
+	fptr->perlyunpacking = -1;\
+	fptr->is_open = 1;\
+} while(0)
+
+#define AbortFitsFile(fptr) \
+do \
+{	Safefree(fptr);\
+	fptr = 0;\
 } while(0)
 
 MODULE = Astro::FITS::CFITSIO		PACKAGE = Astro::FITS::CFITSIO
@@ -1659,25 +1671,29 @@ create_file(name,status)
 	char * name
 	int status
 	PREINIT:
-		FitsFile * fptr;
+		FitsFile* fptr;
 	CODE:
 		NewFitsFile(fptr);
-		ffinit(&(fptr->fptr),name,&status);
+		if (ffinit(&(fptr->fptr),name,&status))
+		  AbortFitsFile(fptr);
 		RETVAL = fptr;
+
 	OUTPUT:
 		RETVAL
 		status
 
 int
 ffinit(fptr,name,status)
-	FitsFile * &fptr = NO_INIT
+	FitsFile * fptr = NO_INIT
 	char * name
-	int &status
+	int status
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_create_file = 1
 	CODE:
 		NewFitsFile(fptr);
 		RETVAL = ffinit(&(fptr->fptr),name,&status);
+		if (RETVAL)
+		  AbortFitsFile(fptr);
 	OUTPUT:
 		RETVAL
 		fptr
@@ -1744,7 +1760,8 @@ create_template(filename,tpltfile,status)
 		FitsFile * fptr;
 	CODE:
 		NewFitsFile(fptr);
-		fftplt(&(fptr->fptr),filename,tpltfile,&status);
+		if (fftplt(&(fptr->fptr),filename,tpltfile,&status))
+		   AbortFitsFile(fptr);
 		RETVAL = fptr;
 	OUTPUT:
 		RETVAL
@@ -1760,7 +1777,9 @@ fftplt(fptr,filename,tpltfile,status)
 		Astro::FITS::CFITSIO::fits_create_template = 1
 	CODE:
 		NewFitsFile(fptr);
-		fftplt(&(fptr->fptr),filename,tpltfile,&status);
+		RETVAL = fftplt(&(fptr->fptr),filename,tpltfile,&status);
+		if (RETVAL)
+		   AbortFitsFile(fptr);
 	OUTPUT:
 		RETVAL
 		fptr
@@ -1940,6 +1959,17 @@ ffesum(sum,complm,ascii)
 		ffesum(sum,complm,ascii);
 	OUTPUT:
 		ascii
+
+int
+ffexist(filename, exists, status)
+	char* filename
+	int &exists = NO_INIT
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_file_exists = 1
+	OUTPUT:
+		exists
+		status
 
 int
 ffflmd(fptr,iomode,status)
@@ -3191,29 +3221,23 @@ ffnchk(fptr,status)
 	OUTPUT:
 		status
 
-void
+FitsFile*
 open_file(filename,iomode,status)
 	char * filename
 	int iomode
 	int status
 	PREINIT:
 		FitsFile * fptr;
-		SV *retval;
-	PPCODE:
+	CODE:
 		if (!filename) /* undef passed */
 			filename = "";
 		NewFitsFile(fptr);
-		ffopen(&(fptr->fptr),filename,iomode,&status);
-		sv_setiv(ST(2), (IV)status);
-		SvSETMAGIC(ST(2));
-		EXTEND(SP, 1);
-		if (status > 0)
-			PUSHs(&PL_sv_undef);
-		else {
-			retval = sv_newmortal();
-			sv_setref_pv(retval,"fitsfilePtr",fptr);
-			PUSHs(retval);
-		}
+		if (ffopen(&(fptr->fptr),filename,iomode,&status))
+		   AbortFitsFile(fptr);
+		RETVAL = fptr;
+	OUTPUT:
+		RETVAL
+		status
 
 int
 ffopen(fptr,filename,iomode,status)
@@ -3228,13 +3252,11 @@ ffopen(fptr,filename,iomode,status)
 			filename = "";
 		NewFitsFile(fptr);
 		RETVAL = ffopen(&(fptr->fptr),filename,iomode,&status);
-		if (status==0) {
-			sv_setref_pv(ST(0),"fitsfilePtr",fptr);
-		}
-		else
-			sv_setsv(ST(0), &PL_sv_undef);
+		if (RETVAL)
+		   AbortFitsFile(fptr);
 	OUTPUT:
 		RETVAL
+		fptr
 		status
 
 int
@@ -3250,13 +3272,11 @@ ffdopn(fptr,filename,iomode,status)
 			filename = "";
 		NewFitsFile(fptr);
 		RETVAL = ffdopn(&(fptr->fptr),filename,iomode,&status);
-		if (status==0) {
-			sv_setref_pv(ST(0),"fitsfilePtr",fptr);
-		}
-		else
-			sv_setsv(ST(0), &PL_sv_undef);
+		if (RETVAL)
+		   AbortFitsFile(fptr);
 	OUTPUT:
 		RETVAL
+		fptr
 		status
 
 int
@@ -3272,13 +3292,11 @@ ffiopn(fptr,filename,iomode,status)
 			filename = "";
 		NewFitsFile(fptr);
 		RETVAL = ffiopn(&(fptr->fptr),filename,iomode,&status);
-		if (status==0) {
-			sv_setref_pv(ST(0),"fitsfilePtr",fptr);
-		}
-		else
-			sv_setsv(ST(0), &PL_sv_undef);
+		if (RETVAL)
+		   AbortFitsFile(fptr);
 	OUTPUT:
 		RETVAL
+		fptr
 		status
 
 int
@@ -3294,13 +3312,11 @@ fftopn(fptr,filename,iomode,status)
 			filename = "";
 		NewFitsFile(fptr);
 		RETVAL = fftopn(&(fptr->fptr),filename,iomode,&status);
-		if (status==0) {
-			sv_setref_pv(ST(0),"fitsfilePtr",fptr);
-		}
-		else
-			sv_setsv(ST(0), &PL_sv_undef);
+		if (RETVAL)
+		   AbortFitsFile(fptr);
 	OUTPUT:
 		RETVAL
+		fptr
 		status
 
 int
@@ -3315,13 +3331,12 @@ ffgtop(mfptr,group,gfptr,status)
 	CODE:
 		NewFitsFile(gfptr);
 		RETVAL = ffgtop(mfptr,group,&(gfptr->fptr),&status);
-		if (status > 0)
-			sv_setsv(ST(2), &PL_sv_undef);
-		else
-			sv_setref_pv(ST(2),"fitsfilePtr",gfptr);
+		if (RETVAL)
+		   AbortFitsFile(gfptr);
 	OUTPUT:
-		status
 		RETVAL
+		gfptr
+		status
 
 int
 ffgmop(gfptr,member,mfptr,status)
@@ -3335,12 +3350,11 @@ ffgmop(gfptr,member,mfptr,status)
 	CODE:
 		NewFitsFile(mfptr);
 		RETVAL = ffgmop(gfptr,member,&(mfptr->fptr),&status);
-		if (status > 0)
-			sv_setsv(ST(2), &PL_sv_undef);
-		else
-			sv_setref_pv(ST(2),"fitsfilePtr",mfptr);
+		if (RETVAL)
+		   AbortFitsFile(mfptr);
 	OUTPUT:
 		status
+		mfptr
 		RETVAL
 
 int
@@ -5244,19 +5258,19 @@ ffgcfc(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			else
 				array = get_mortalspace(nelem,TCOMPLEX);
 			if (ST(6) != &PL_sv_undef) {
-				SvGROW(ST(6),2*nelem*sizeof_datatype(TLOGICAL));
+				SvGROW(ST(6),nelem*sizeof_datatype(TLOGICAL));
 				nularray = (logical*)(SvPV(ST(6),PL_na));
 			}
 			else
-				nularray = get_mortalspace(2*nelem,TLOGICAL);
+				nularray = get_mortalspace(nelem,TLOGICAL);
 			RETVAL=ffgcfc(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TCOMPLEX);
-			nularray = get_mortalspace(nelem*2,TLOGICAL);
+			nularray = get_mortalspace(nelem,TLOGICAL);
 			RETVAL=ffgcfc(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TCOMPLEX,fptr->perlyunpacking);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem*2,TLOGICAL,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -5286,19 +5300,19 @@ ffgcfm(fptr,colnum,frow,felem,nelem,array,nularray,anynul,status)
 			else
 				array = get_mortalspace(nelem,TDBLCOMPLEX);
 			if (ST(6) != &PL_sv_undef) {
-				SvGROW(ST(6),2*nelem*sizeof_datatype(TLOGICAL));
+				SvGROW(ST(6),nelem*sizeof_datatype(TLOGICAL));
 				nularray = (logical*)(SvPV(ST(6),PL_na));
 			}
 			else
-				nularray = get_mortalspace(2*nelem,TLOGICAL);
+				nularray = get_mortalspace(nelem,TLOGICAL);
 			RETVAL=ffgcfm(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 		}
 		else {
 			array = get_mortalspace(nelem,TDBLCOMPLEX);
-			nularray = get_mortalspace(nelem*2,TLOGICAL);
+			nularray = get_mortalspace(nelem,TLOGICAL);
 			RETVAL=ffgcfm(fptr->fptr,colnum,frow,felem,nelem,array,nularray,&anynul,&status);
 			if (ST(5) != &PL_sv_undef) unpack1D(ST(5),array,nelem,TDBLCOMPLEX,fptr->perlyunpacking);
-			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem*2,TLOGICAL,fptr->perlyunpacking);
+			if (ST(6) != &PL_sv_undef) unpack1D(ST(6),nularray,nelem,TLOGICAL,fptr->perlyunpacking);
 		}
 		if (ST(7) != &PL_sv_undef) sv_setiv(ST(7),anynul);
 	OUTPUT:
@@ -7720,12 +7734,11 @@ ffreopen(openfptr,newfptr,status)
 	CODE:
 		NewFitsFile(newfptr);
 		RETVAL = ffreopen(openfptr,&(newfptr->fptr),&status);
-		if (status > 0)
-			sv_setsv(ST(1), &PL_sv_undef);
-		else
-			sv_setref_pv(ST(1),"fitsfilePtr",newfptr);
+		if (RETVAL)
+		   AbortFitsFile(newfptr);
 	OUTPUT:
 		status
+		newfptr
 		RETVAL
 
 void

@@ -13,13 +13,13 @@ Where can (did) I get it?
 
 What version of cfitsio does this module require?
 ----------------------------------------------
-  Astro::FITS::CFITSIO version 1.02 requires at least cfitsio v2.490.
+  Astro::FITS::CFITSIO version 1.03 requires at least cfitsio v2.500.
 
 Installation
 ------------
    For installation instructions, see the 'INSTALL' file in the base
-   distribution directory. Essentially, it just tells you to tidy up
-   the INC and LIBS keys in Makefile.PL and then do
+   distribution directory. Essentially, it just tells you to set the
+   CFITSIO environment variable, and then do
 
      $ perl Makefile.PL OPTIMIZE=-O
      $ make
@@ -28,6 +28,6 @@ Installation
 
 Acknowledgement
 ---------------
-   m51.fits is included as a demonstration by kind permission of the IRAF
-   group at the National Optical and Astronomical Observatories, in particular
-   Pat Seitzer, who retain ownership.
+   m51.fits is included as a demonstration by kind permission of the
+   IRAF group at the National Optical and Astronomical Observatories,
+   in particular Pat Seitzer, who retain ownership.

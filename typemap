@@ -96,4 +96,5 @@ T_STRING
 		sv_setpv((SV *)$arg, $var);
 
 T_PTROBJ_FitsFile
-        sv_setref_pv($arg, \"fitsfilePtr\", (void*)$var);
+	if ($var != NULL)
+	        sv_setref_pv($arg, \"fitsfilePtr\", (void*)$var);

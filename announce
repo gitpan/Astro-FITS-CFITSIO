@@ -4,7 +4,7 @@ A new version of the Perl interface to William Pence's cfitsio
 subroutine library is available. For more information on the cfitsio
 subroutine library, see http://heasarc.gsfc.nasa.gov/fitsio
 
-New features in Astro::FITS::CFITSIO 1.01 include:
+New features in Astro::FITS::CFITSIO 1.03 include:
 
 * Added new cfitsio 2.420 and 2.410 routines:
   fits_flush_buffer
