@@ -1399,6 +1399,16 @@ ffgtch(gfptr,grouptype,status)
 		status
 
 void
+ffpmrk()
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_write_errmark = 1
+
+void
+ffcmrk()
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_clear_errmark = 1
+
+void
 ffcmsg()
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_clear_errmsg = 1
@@ -1496,6 +1506,20 @@ ffgtcp(infptr,outfptr,cpopt,status)
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_copy_group = 1
 		fitsfilePtr::copy_group = 2
+	OUTPUT:
+		status
+
+int
+ffcpfl(infptr,outfptr,previous,current,following,status)
+	fitsfile * infptr
+	fitsfile * outfptr
+	int previous
+	int current
+	int following
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_copy_file = 1
+		fitsfilePtr::copy_file = 2
 	OUTPUT:
 		status
 
@@ -1775,6 +1799,17 @@ ffdrec(fptr,keynum,status)
 		status
 
 int
+ffdrrg(fptr,rangelist,status)
+	fitsfile * fptr
+	char * rangelist
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_delete_rowrange = 1
+		fitsfilePtr::delete_rowrange = 2
+	OUTPUT:
+		status
+
+int
 ffdrws(fptr,rowlist,nrows,status)
 	fitsfile * fptr
 	long * rowlist
@@ -1860,6 +1895,19 @@ ffgnxk(fptr,inclist,ninc,exclist,nexc,card,status)
 		RETVAL
 
 int
+ffffrw(fptr, expr, rownum, status)
+	fitsfile * fptr
+	char * expr
+	long &rownum = NO_INIT
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_find_first_row = 1
+		fitsfilePtr::find_first_row = 2
+	OUTPUT:
+		rownum
+		status
+
+int
 fffrow(fptr,expr,firstrow,nrows,n_good_rows,row_status,status)
 	fitsfile * fptr
 	char * expr
@@ -1893,6 +1941,17 @@ ffflus(fptr,status)
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_flush_file = 1
 		fitsfilePtr::flush_file = 2
+	OUTPUT:
+		status
+
+int
+ffflsh(fptr, clearbuf, status)
+	fitsfile * fptr
+	int clearbuf
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_flush_buffer = 1
+		fitsfilePtr::flush_buffer = 2
 	OUTPUT:
 		status
 
@@ -2648,6 +2707,17 @@ ffirec(fptr,keynum,card,status)
 		status
 
 int
+ffikey(fptr,card,status)
+	fitsfile * fptr
+	char * card
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_insert_card = 1
+		fitsfilePtr::insert_card = 2
+	OUTPUT:
+		status
+
+int
 ffirow(fptr,firstrow,nrows,status)
 	fitsfile * fptr
 	long firstrow
@@ -3024,6 +3094,68 @@ ffopen(fptr,filename,iomode,status)
 		RETVAL
 		status
 
+int
+ffdopn(fptr,filename,iomode,status)
+	fitsfile * fptr = NO_INIT
+	char * filename
+	int iomode
+	int status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_open_data = 1
+	CODE:
+		if (!filename) /* undef passed */
+			filename = "";
+		RETVAL = ffdopn(&fptr,filename,iomode,&status);
+		if (status==0) {
+			sv_setref_pv(ST(0),"fitsfilePtr",fptr);
+		}
+		else
+			sv_setsv(ST(0), &PL_sv_undef);
+	OUTPUT:
+		RETVAL
+		status
+
+int
+ffiopn(fptr,filename,iomode,status)
+	fitsfile * fptr = NO_INIT
+	char * filename
+	int iomode
+	int status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_open_image = 1
+	CODE:
+		if (!filename) /* undef passed */
+			filename = "";
+		RETVAL = ffiopn(&fptr,filename,iomode,&status);
+		if (status==0) {
+			sv_setref_pv(ST(0),"fitsfilePtr",fptr);
+		}
+		else
+			sv_setsv(ST(0), &PL_sv_undef);
+	OUTPUT:
+		RETVAL
+		status
+
+int
+fftopn(fptr,filename,iomode,status)
+	fitsfile * fptr = NO_INIT
+	char * filename
+	int iomode
+	int status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_open_table = 1
+	CODE:
+		if (!filename) /* undef passed */
+			filename = "";
+		RETVAL = fftopn(&fptr,filename,iomode,&status);
+		if (status==0) {
+			sv_setref_pv(ST(0),"fitsfilePtr",fptr);
+		}
+		else
+			sv_setsv(ST(0), &PL_sv_undef);
+	OUTPUT:
+		RETVAL
+		status
 
 int
 ffgtop(mfptr,group,gfptr,status)
@@ -3104,6 +3236,36 @@ ffiurl(filename,urltype,infile,outfile,extspec,filter,binspec,colspec,status)
 		filter
 		binspec
 		colspec
+		status
+		RETVAL
+
+int
+ffrwrg(rowlist, maxrows, maxranges, numranges, rangemin, rangemax, status)
+	char * rowlist
+	long maxrows
+	int maxranges
+	int numranges = NO_INIT
+	long * rangemin = NO_INIT
+	long * rangemax = NO_INIT
+	int status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_parse_range = 1
+	CODE:
+		if (ST(4)!=&PL_sv_undef || ST(5)!=&PL_sv_undef) {
+			rangemin = get_mortalspace(maxranges,TLONG);
+			rangemax = get_mortalspace(maxranges,TLONG);
+		}
+		else {
+			rangemin = rangemax = 0;
+			maxranges = 0;
+		}
+
+		RETVAL=ffrwrg(rowlist, maxrows, maxranges, &numranges,
+			rangemin, rangemax, &status);
+		if (ST(3)!=&PL_sv_undef) sv_setiv(ST(3),numranges);
+		if (ST(4)!=&PL_sv_undef) unpack1D(ST(4),rangemin,numranges,TLONG);
+		if (ST(5)!=&PL_sv_undef) unpack1D(ST(5),rangemax,numranges,TLONG);
+	OUTPUT:
 		status
 		RETVAL
 

@@ -620,7 +620,8 @@ void unpackND ( SV * arg, void * var, int ndims, long *dims, int datatype ) {
     for (i=ndims-2;i>=0; i--) {
       if (places[i] >= dims[i]) {
 	places[i] = 0;
-	places[i-1]++;
+	if (i>0)
+	  places[i-1]++;
       }
       else
 	break;

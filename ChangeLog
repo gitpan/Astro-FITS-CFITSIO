@@ -1,3 +1,25 @@
+2002-10-28  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.pm: $VERSION = '1.01';
+
+2002-09-04  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.xs: added cfitsio 2.420 routine fits_flush_buffer.
+
+2002-07-30  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.xs: added fits_find_first_row/ffffrw
+
+2002-06-27  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* util.c: unpackND() bug fixed.
+
+	* CFITSIO.xs: Added cfitsio 2.410 routines fits_open_data,
+	fits_open_image, fits_open_table, fits_write_errmark,
+	fits_clear_errmark, fits_delete_rowrange, fits_copy_file,
+	fits_parse_range, and fits_insert_key.
+	
+
 2002-04-05  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
 
 	* $VERSION = '1.00';
