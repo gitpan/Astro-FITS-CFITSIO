@@ -13,7 +13,7 @@ Where can (did) I get it?
 
 What version of cfitsio does this module require?
 ----------------------------------------------
-  Astro::FITS::CFITSIO version 1.03 requires at least cfitsio v2.500.
+  Astro::FITS::CFITSIO version 1.04 requires at least cfitsio v3.006
 
 Installation
 ------------

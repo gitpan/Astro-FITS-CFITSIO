@@ -556,7 +556,8 @@ void pack_element(SV* work, SV** arg, int datatype) {
     croak("pack_element() - can only handle scalars or refs to N-D arrays of scalars");
 }
 
-void unpack2D( SV * arg, void * var, long *dims, int datatype, int perlyunpack) {
+void unpack2D(SV* arg, void* var, LONGLONG* dims, int datatype, int perlyunpack)
+{
   long i,skip;
   AV *array;
   char * tmp_var = (char *)var;
@@ -576,7 +577,8 @@ void unpack2D( SV * arg, void * var, long *dims, int datatype, int perlyunpack) 
   }
 }
 
-void unpack3D( SV * arg, void * var, long *dims, int datatype, int perlyunpack) {
+void unpack3D(SV* arg, void* var, LONGLONG* dims, int datatype, int perlyunpack)
+{
   long i,j,skip;
   AV *array1,*array2;
   SV *tmp_sv;
@@ -605,8 +607,9 @@ void unpack3D( SV * arg, void * var, long *dims, int datatype, int perlyunpack) 
 /*
  * This routine is known to have problems
  */
-void unpackND ( SV * arg, void * var, int ndims, long *dims, int datatype,
-		int perlyunpack ) {
+void unpackNDll ( SV * arg, void * var, int ndims, LONGLONG *dims,
+		  int datatype, int perlyunpack )
+{
   int i;
   OFF_T ndata, nbytes, written, *places, skip;
   AV **avs;
@@ -654,6 +657,18 @@ void unpackND ( SV * arg, void * var, int ndims, long *dims, int datatype,
   }
   free(places);
   free(avs);
+}
+
+void unpackND (SV* arg, void* var, int ndims, long *dims,
+	       int datatype, int perlyunpack)
+{
+  LONGLONG* dimsll = malloc(ndims*sizeof(LONGLONG));
+  int i;
+  for (i=0; i<ndims; ++i)
+    dimsll[i] = dims[i];
+  unpackNDll(arg, var, ndims, dimsll, datatype, perlyunpack);
+  free(dimsll);
+  return;
 }
 
 /*
@@ -734,9 +749,8 @@ void unpackScalar(SV * arg, void * var, int datatype) {
   return;
 }
 
-void unpack1D ( SV * arg, void * var, long n, int datatype,
-		int perlyunpack ) {
-
+void unpack1D (SV* arg, void* var, LONGLONG n, int datatype, int perlyunpack)
+{
   char ** stringvar;
   logical * logvar;
   sbyte * sbvar;
@@ -858,7 +872,8 @@ void unpack1D ( SV * arg, void * var, long n, int datatype,
   return;
 }
 
-AV* coerce1D ( SV* arg, long n) {
+AV* coerce1D (SV* arg, LONGLONG n)
+{
   AV* array;
   I32 i;
 
@@ -880,7 +895,8 @@ AV* coerce1D ( SV* arg, long n) {
   return array;
 }
 
-AV* coerceND (SV *arg, int ndims, long *dims) {
+AV* coerceND (SV* arg, int ndims, LONGLONG *dims)
+{
   AV* array;
   I32 j;
 
@@ -897,8 +913,8 @@ AV* coerceND (SV *arg, int ndims, long *dims) {
  * A way of getting temporary memory without having to free() it
  * by making a mortal Perl variable of the appropriate size.
  */
-void* get_mortalspace( long n, int datatype ) {
-  long datalen;
+void* get_mortalspace(LONGLONG n, int datatype) {
+  LONGLONG datalen;
   SV *work;
 
   work = sv_2mortal(newSVpv("", 0));
@@ -962,7 +978,8 @@ int sizeof_datatype(int datatype) {
 /* takes an array of longs, reversing their order inplace
  * useful for reversing the order of naxes before passing them
  * off to unpack?D() */
-void order_reverse (int nelem, long *vals) {
+
+void order_reversell (int nelem, LONGLONG *vals) {
   long tmp;
   int i;
   for (i=0; i<nelem/2; i++) {
@@ -970,4 +987,15 @@ void order_reverse (int nelem, long *vals) {
     vals[i] = vals[nelem-i-1];
     vals[nelem-i-1] = tmp;
   }
+}
+
+void order_reverse (int nelem, long *vals)
+{
+  LONGLONG* valsll = malloc(nelem*sizeof(LONGLONG));
+  int i;
+  for (i=0; i<nelem; ++i)
+    valsll[i] = vals[i];
+  order_reversell(nelem, valsll);
+  free(valsll);
+  return;
 }

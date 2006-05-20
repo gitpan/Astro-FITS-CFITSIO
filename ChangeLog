@@ -1,3 +1,48 @@
+2006-05-19  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.xs: added fits_translate_keyword(s),
+	fits_copy_cell2image, fits_copy_image2cell
+
+2006-05-18  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.xs: added fits_parse_rangell, fits_binary_tformll,
+	ffmbyt (aka fits_seek - this function does not have a longname in
+	cfitsio, and should typically not be used by applications),
+	fits_write_tdimll, ffpknjj (aka fits_write_keys_lnglng - no
+	longname in cfitsio), fits_write_imghdrll, fits_write_grphdrll,
+	fits_read_key_lnglng, fits_read_tdimll, fits_decode_tdimll,
+	ffgknjj (aka fits_read_keys_lnglng - no longname in cfitsio),
+	fits_read_imghdrll, fits_read_atblhdrll, fits_read_btblhdrll,
+	fits_get_hduaddrll, fits_get_img_parmall, fits_create_imgll,
+	fits_insert_imgll, fits_resize_imgll, fits_get_coltypell,
+	fits_get_eqcoltypell, fits_get_num_rowsll, fits_get_bcol_parmsll,
+	fits_read_pixll, fits_read_pixnullll, fits_read_img_sbyt,
+	fits_read_img_lnglng, fits_read_imgnull_sbyt,
+	fits_read_imgnull_lnglng, fits_read_2d_sbyt, fits_read_2d_lnglng,
+	fits_read_3d_sbyt, fits_read_3d_lnglng, fits_read_subset_lnglng,
+	fits_read_subsetnull_sbyt, fits_read_subsetnull_lnglng,
+	fits_read_grppar_lnglng, fits_read_col_sbyt, fits_read_col_lnglng,
+	fits_read_colnull_sbyt, fits_read_colnull_lnglng,
+	fits_read_descriptll, fits_read_descriptsll, fits_write_pixll,
+	fits_write_pixnullll, fits_write_img_sbyt, fits_write_img_lnglng,
+	fits_write_imgnull_sbyt, fits_write_imgnull_lnglng,
+	fits_write_2d_sbyt, fits_write_2d_lnglng, fits_write_3d_sbyt,
+	fits_write_3d_lnglng, fits_write_subset_sbyt, fits_write_subset_lnglng,
+	fits_write_grppar_sbyt, fits_write_grppar_lnglng,
+	fits_write_col_sbyt, fits_write_col_lnglng, fits_write_nullrows,
+	fits_write_colnull_sbyt, fits_write_colnull_lnglng,
+	fits_delete_rowlistll, fits_read_grppar_sbyt,
+	fits_read_subset_sbyt 
+
+	* CFITSIO.xs: added upackNDll
+	
+	* typemap: added mapping for signed char (cfitsio TSBYTE)
+	
+2005-01-04  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.xs: added cfitsio 2510 routines
+	ffdkopn/fits_open_diskfile and ffdkinit/fits_create_diskfile
+
 2004-08-16  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
 
 	* CFITSIO.pm: $VERSION = '1.0.3';

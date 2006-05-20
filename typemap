@@ -7,6 +7,7 @@ fitsfile *	 T_PTROBJ_fitsfile
 FitsFile *	 T_PTROBJ_FitsFile
 logical *        T_LOGICALP
 byte *           T_BYTEP
+signed char *    T_SCHARP
 unsigned short * T_USHORTP
 unsigned int *   T_UINTP
 unsigned long *  T_ULONGP
@@ -19,6 +20,7 @@ double *         T_DOUBLEP
 char **          T_STRINGP
 char *           T_STRING
 byte             T_BYTE
+signed char      T_SCHAR
 logical          T_LOGICAL
 float            T_FLOAT
 OFF_T            T_OFF_T
@@ -34,6 +36,8 @@ T_LOGICALP
 	$var = ($type)packND($arg,TLOGICAL)
 T_BYTEP
 	$var = ($type)packND($arg,TBYTE)
+T_SCHARP
+	$var = ($type)packND($arg,TSBYTE)
 T_USHORTP
 	$var = ($type)packND($arg,TUSHORT)
 T_SHORTP
@@ -53,6 +57,8 @@ T_FLOATP
 T_DOUBLEP
 	$var = ($type)packND($arg,TDOUBLE)
 T_BYTE
+	$var = ($type)SvIV($arg)
+T_SCHAR
 	$var = ($type)SvIV($arg)
 T_OFF_T
 	$var = ($type)SvUV($arg)
@@ -84,6 +90,8 @@ T_PTROBJ_FitsFile
 
 OUTPUT
 T_BYTE
+	sv_setiv($arg, (IV) $var);
+T_SCHAR
 	sv_setiv($arg, (IV) $var);
 T_OFF_T
 	sv_setuv($arg, (UV) $var);
