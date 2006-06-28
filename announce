@@ -4,97 +4,19 @@ A new version of the Perl interface to William Pence's cfitsio
 subroutine library is available. For more information on cfitsio, see
 http://heasarc.gsfc.nasa.gov/fitsio
 
-The major change in this version of the module is a synchronization
-with cfitsio version 3.006, including implementation of functions
-accepting 64-bit integer and signed byte arguments. Note that
-internally Perl will still use 32-bit integer types unless compiled
-with support for 64-bit integer values.
-
-New features in Astro::FITS::CFITSIO 1.04 include:
-
-* Added recent cfitsio routines
-  fits_open_diskfile
-  fits_create_diskfile
-  fits_copy_cell2image
-  fits_copy_image2cell
-  fits_translate_keyword
-  fits_translate_keywords
-
-* Added long long and signed char functions
-  fits_parse_rangell
-  fits_binary_tformll
-  fits_write_tdimll
-  fits_write_keys_lnglng
-  fits_write_imghdrll
-  fits_write_grphdrll
-  fits_read_key_lnglng
-  fits_read_tdimll
-  fits_decode_tdimll
-  fits_read_keys_lnglng
-  fits_read_imghdrll
-  fits_read_atblhdrll
-  fits_read_btblhdrll
-  fits_get_hduaddrll
-  fits_get_img_parmall
-  fits_create_imgll
-  fits_insert_imgll
-  fits_resize_imgll
-  fits_get_coltypell
-  fits_get_eqcoltypell
-  fits_get_num_rowsll
-  fits_get_bcol_parmsll
-  fits_read_pixll
-  fits_read_pixnullll
-  fits_read_img_sbyt
-  fits_read_img_lnglng
-  fits_read_imgnull_sbyt
-  fits_read_imgnull_lnglng
-  fits_read_2d_sbyt
-  fits_read_2d_lnglng
-  fits_read_3d_sbyt
-  fits_read_3d_lnglng
-  fits_read_subset_lnglng
-  fits_read_subsetnull_sbyt
-  fits_read_subsetnull_lnglng
-  fits_read_grppar_lnglng
-  fits_read_col_sbyt
-  fits_read_col_lnglng
-  fits_read_colnull_sbyt
-  fits_read_colnull_lnglng
-  fits_read_descriptll
-  fits_read_descriptsll
-  fits_write_pixll
-  fits_write_pixnullll
-  fits_write_img_sbyt
-  fits_write_img_lnglng
-  fits_write_imgnull_sbyt
-  fits_write_imgnull_lnglng
-  fits_write_2d_sbyt
-  fits_write_2d_lnglng
-  fits_write_3d_sbyt
-  fits_write_3d_lnglng
-  fits_write_subset_sbyt
-  fits_write_subset_lnglng
-  fits_write_grppar_sbyt
-  fits_write_grppar_lnglng
-  fits_write_col_sbyt
-  fits_write_col_lnglng
-  fits_write_nullrows
-  fits_write_colnull_sbyt
-  fits_write_colnull_lnglng
-  fits_delete_rowlistll
-  fits_read_grppar_sbyt
-  fits_read_subset_sbyt
+The only change in this version is a bug fixed from 1.04 whereby Perl
+multidimensional arrays returned from fits_read_pix and fits_read_pixnull 
+had their dimensions reversed.
 
 Version 3.006 of the cfitsio library is required to build this
 module. Astro::FITS::CFITSIO has been tested on Linux 2.6 (ix86, Perl
 5.8.3) and Solaris 2.8 (Sparc, Perl 5.005).
 
 This version of Astro::FITS::CFITSIO can be obtained at
-  http://hea-www.harvard.edu/~rpete/cfitsio/Astro-FITS-CFITSIO-1.04.tar.gz
+  http://hea-www.harvard.edu/~rpete/cfitsio/Astro-FITS-CFITSIO-1.05.tar.gz
 
 And also on your local CPAN mirror
-  http://cpan.org/authors/id/P/PR/PRATZLAFF/Astro-FITS-CFITSIO-1.04.tar.gz
+  http://cpan.org/authors/id/P/PR/PRATZLAFF/Astro-FITS-CFITSIO-1.05.tar.gz
 
 As always, you can find the latest version of Astro::FITS::CFITSIO at
   http://hea-www.harvard.edu/~rpete/cfitsio

@@ -980,7 +980,7 @@ int sizeof_datatype(int datatype) {
  * off to unpack?D() */
 
 void order_reversell (int nelem, LONGLONG *vals) {
-  long tmp;
+  LONGLONG tmp;
   int i;
   for (i=0; i<nelem/2; i++) {
     tmp = vals[i];
@@ -989,13 +989,12 @@ void order_reversell (int nelem, LONGLONG *vals) {
   }
 }
 
-void order_reverse (int nelem, long *vals)
-{
-  LONGLONG* valsll = malloc(nelem*sizeof(LONGLONG));
+void order_reverse (int nelem, long *vals) {
+  long tmp;
   int i;
-  for (i=0; i<nelem; ++i)
-    valsll[i] = vals[i];
-  order_reversell(nelem, valsll);
-  free(valsll);
-  return;
+  for (i=0; i<nelem/2; i++) {
+    tmp = vals[i];
+    vals[i] = vals[nelem-i-1];
+    vals[nelem-i-1] = tmp;
+  }
 }
