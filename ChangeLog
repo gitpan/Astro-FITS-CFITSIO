@@ -1,3 +1,35 @@
+2011-01-26  Pete Ratzlaff  <rpete@legs.cfa.harvard.edu>
+
+2011-01-26  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.pm: $VERSION = '1.06';
+
+	* CFITSIO.xs: update to cfitsio 3.26, added routines
+	fits_copy_rows, fits_get_inttype, fits_convert_hdr2str, added
+	short name ffhdr2str => 'fits_hdr2str', added constants
+	CFITSIO_MAJOR and CFITSIO_MINOR
+
+2010-07-28  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* util.c (column_width): fixed incorrect determination of ASCII
+	string widths for values in binary tables columns
+
+2009-08-21  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.xs: fixed bug in fits_update_key when called with
+	datatype TLOGICAL, whereby the input value was not converted to
+	int properly.
+
+2008-08-26  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* testprog/testprog_pdl.pl: get testprog_pdl.pl work properly on
+	64-bit archs
+
+2007-02-14  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.xs: added fits_write_hdu/ffwrhdu,
+	fits_write_exthdr/ffphext
+
 2006-06-27  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
 
 	* CFITSIO.pm: $VERSION = '1.0.5';

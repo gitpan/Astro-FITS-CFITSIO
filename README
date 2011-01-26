@@ -13,7 +13,7 @@ Where can (did) I get it?
 
 What version of cfitsio does this module require?
 ----------------------------------------------
-  Astro::FITS::CFITSIO version 1.05 requires at least cfitsio v3.006
+  Astro::FITS::CFITSIO version 1.06 requires at least cfitsio version 3.26
 
 Installation
 ------------
@@ -21,7 +21,7 @@ Installation
    distribution directory. Essentially, it just tells you to set the
    CFITSIO environment variable, and then do
 
-     $ perl Makefile.PL OPTIMIZE=-O
+     $ perl Makefile.PL OPTIMIZE=-O0
      $ make
      $ make test
      $ make install

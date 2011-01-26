@@ -19,7 +19,7 @@ static int perly_unpacking = 1; /* state variable */
  * Get the width of a string column in an ASCII or binary table
  */
 long column_width(fitsfile * fptr, int colnum) {
-  int hdutype, status=0, tfields;
+  int hdutype, status=0, tfields, dispwidth;
   long repeat, size;
   long start_col,end_col; /* starting and ending positions for ASCII tables */
   long rowlen, nrows, *tbcol;
@@ -58,23 +58,12 @@ long column_width(fitsfile * fptr, int colnum) {
     size = end_col - start_col;
     break;
 
-    /* Get the typechar parameter, which should be of form 'An', where
-     * n is an the width of the field
-     */
   case BINARY_TBL:
-    fits_get_bcolparms(
-		       fptr,colnum,NULL,NULL,typechar,&repeat,NULL,NULL,
-		       NULL,NULL,&status
-		       );
+    fits_get_col_display_width(fptr, colnum, &dispwidth, &status);
     check_status(status);
-    if (typechar[0] != 'A') { /* perhaps variable size? */
-      fits_read_key_lng(fptr,"NAXIS2",&rowlen,NULL,&status);
-      check_status(status);
-      size  = rowlen+1;
-    }
-    else
-      size = repeat;
+    size = dispwidth;
     break;
+
   default:
     croak("column_width() - unrecognized HDU type (%d)",hdutype);
   }

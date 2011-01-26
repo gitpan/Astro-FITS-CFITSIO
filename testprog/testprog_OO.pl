@@ -74,7 +74,6 @@ $fptr=Astro::FITS::CFITSIO::create_file('!testprog.fit',$status);
 print "ffinit create new file status = $status\n";
 $status and goto ERRSTATUS;
 
-$filemode;
 $fptr->file_name($filename,$status);
 $fptr->file_mode($filemode,$status);
 print "Name of file = $filename, I/O mode = $filemode\n";
@@ -281,7 +280,6 @@ print "  $anynull (ffgpvd)\n";
 $status and print("ERROR: ffgpv_ status = $status\n"), goto ERRSTATUS;
 $anynull or print "ERROR: ffgpv_ did not detect null values\n";
 
-$ii;
 for ($ii=3;$ii<$npixels;$ii+=4) {
 	$boutarray->[$ii] = 99;
 	$ioutarray->[$ii] = 99;
@@ -316,7 +314,6 @@ for ($ii=0; $ii<$npixels;$ii++) {
 @{$dinarray} = map(0.0,(0..$npixels-1));
 
 $anynull = 0;
-$larray;
 $fptr->read_imgnull_byt(1,1,10,$binarray,$larray,$anynull,$status);
 $fptr->read_imgnull_byt(1,11,10,$tmp1,$tmp2,$anynull,$status);
 @{$binarray}[10..$npixels-1] = @{$tmp1};

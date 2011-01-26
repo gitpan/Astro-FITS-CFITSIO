@@ -331,6 +331,18 @@ int arg;
 #else
 	    goto not_there;
 #endif
+	if (strEQ(name, "CFITSIO_MAJOR"))
+#ifdef CFITSIO_MAJOR
+	    return CFITSIO_MAJOR;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CFITSIO_MINOR"))
+#ifdef CFITSIO_MINOR
+	    return CFITSIO_MINOR;
+#else
+	    goto not_there;
+#endif
 	if (strEQ(name, "COL_NOT_FOUND"))
 #ifdef COL_NOT_FOUND
 	    return COL_NOT_FOUND;
@@ -1598,6 +1610,19 @@ ffcpcl(infptr,outfptr,incolnum,outcolnum,create_col,status)
 		status
 
 int
+ffcprw(infptr,outfptr,firstrow,nrows,status)
+	fitsfile * infptr
+	fitsfile * outfptr
+	LONGLONG firstrow
+	LONGLONG nrows
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_copy_rows = 1
+		fitsfilePtr::copy_rows = 2
+	OUTPUT:
+		status
+
+int
 ffcpdt(infptr,outfptr,status)
 	fitsfile * infptr
 	fitsfile * outfptr
@@ -1605,6 +1630,17 @@ ffcpdt(infptr,outfptr,status)
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_copy_data = 1
 		fitsfilePtr::copy_data = 2
+	OUTPUT:
+		status
+
+int
+ffwrhdu(infptr, stream, status)
+	fitsfile * infptr
+	FILE * stream
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_write_hdu = 1
+		fitsfilePtr::write_hdu = 2
 	OUTPUT:
 		status
 
@@ -2586,6 +2622,19 @@ ffgidt(fptr,bitpix,status)
 		status
 
 int
+ffinttyp(value,inttype,neg,status)
+	char * value
+	int &inttype = NO_INIT
+	int &neg = NO_INIT
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_get_inttype = 1
+	OUTPUT:
+		inttype
+		neg
+		status
+
+int
 ffgiet(fptr,bitpix,status)
 	fitsfile * fptr
 	int &bitpix = NO_INIT
@@ -2811,14 +2860,34 @@ ffvers(version)
 		RETVAL
 
 int
-fits_hdr2str(fptr, nocomments, header, nkeys, status)
+ffhdr2str(fptr, nocomments, header, nkeys, status)
 	FitsFile *fptr
 	int nocomments
 	char *header = NO_INIT
 	int nkeys = NO_INIT
 	int status
 	ALIAS:
-		fitsfilePtr::hdr2str = 1
+		Astro::FITS::CFITSIO::fits_hdr2str = 1
+		fitsfilePtr::hdr2str = 2
+	CODE:
+		RETVAL=fits_hdr2str(fptr->fptr,nocomments,NULL,0,&header,&nkeys,&status);
+		if (ST(2)!=&PL_sv_undef) unpackScalar(ST(2), header, TSTRING);
+		if (ST(3)!=&PL_sv_undef) unpackScalar(ST(3), &nkeys, TINT);
+		free(header);
+	OUTPUT:
+		status
+		RETVAL
+
+int
+ffcnvthdr2str(fptr, nocomments, header, nkeys, status)
+	FitsFile *fptr
+	int nocomments
+	char *header = NO_INIT
+	int nkeys = NO_INIT
+	int status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_convert_hdr2str = 1
+		fitsfilePtr::convert_hdr2str = 2
 	CODE:
 		RETVAL=fits_hdr2str(fptr->fptr,nocomments,NULL,0,&header,&nkeys,&status);
 		if (ST(2)!=&PL_sv_undef) unpackScalar(ST(2), header, TSTRING);
@@ -9373,14 +9442,15 @@ ffuky(fptr,datatype,keyname,value,comm,status)
 	fitsfile * fptr
 	int datatype
 	char * keyname
-	SV * value
+	void * value = NO_INIT
 	char * comm
 	int status
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_update_key = 1
 		fitsfilePtr::update_key = 2
 	CODE:
-		RETVAL=ffuky(fptr,datatype,keyname,pack1D(value,datatype),comm,&status);
+		value = pack1D(ST(3),(datatype == TLOGICAL) ? TINT : datatype);
+		RETVAL=ffuky(fptr,datatype,keyname,value,comm,&status);
 	OUTPUT:
 		status
 		RETVAL
@@ -10008,6 +10078,22 @@ ffphbn(fptr,nrows,tfields,ttype,tform,tunit,extname,pcount,status)
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_write_btblhdr = 1
 		fitsfilePtr::write_btblhdr = 2
+	OUTPUT:
+		status
+
+int
+ffphext(fptr, xtension, bitpix, naxis, naxes, pcount, gcount, status)
+	fitsfile * fptr
+	char * xtension
+	int bitpix
+	int naxis
+	long * naxes
+	LONGLONG pcount
+	LONGLONG gcount
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_write_exthdr = 1
+		fitsfilePtr::write_exthdr = 2
 	OUTPUT:
 		status
 

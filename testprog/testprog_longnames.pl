@@ -74,7 +74,6 @@ fits_create_file($fptr,'!testprog.fit',$status);
 print "ffinit create new file status = $status\n";
 $status and goto ERRSTATUS;
 
-$filemode;
 fits_file_name($fptr,$filename,$status);
 fits_file_mode($fptr,$filemode,$status);
 print "Name of file = $filename, I/O mode = $filemode\n";
@@ -282,7 +281,6 @@ print "  $anynull (ffgpvd)\n";
 $status and print("ERROR: ffgpv_ status = $status\n"), goto ERRSTATUS;
 $anynull or print "ERROR: ffgpv_ did not detect null values\n";
 
-$ii;
 for ($ii=3;$ii<$npixels;$ii+=4) {
 	$boutarray->[$ii] = 99;
 	$ioutarray->[$ii] = 99;
@@ -317,7 +315,6 @@ for ($ii=0; $ii<$npixels;$ii++) {
 @{$dinarray} = map(0.0,(0..$npixels-1));
 
 $anynull = 0;
-$larray;
 fits_read_imgnull_byt($fptr,1,1,10,$binarray,$larray,$anynull,$status);
 fits_read_imgnull_byt($fptr,1,11,10,$tmp1,$tmp2,$anynull,$status);
 @{$binarray}[10..$npixels-1] = @{$tmp1};

@@ -3,6 +3,8 @@ Unimplemented:
     * fits_open_memfile
     * fits_split_names
     * fits_read_wcstab
+    * fits_write_ext
+    * fits_read_ext
 
 Other:
     * fits_hdr2str - exclude, nexc parameters unimplemented, they are

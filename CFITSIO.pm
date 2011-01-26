@@ -1,5 +1,5 @@
 package Astro::FITS::CFITSIO;
-$VERSION = '1.05';
+$VERSION = '1.06';
 
 use strict;
 use Carp;
@@ -18,7 +18,6 @@ my @__names_no_short = qw(
                           fits_set_noise_bits
                           fits_get_tile_dim
                           fits_set_tile_dim
-                          fits_hdr2str
                           fits_translate_keyword
                           fits_translate_keywords
                           fits_copy_cell2image
@@ -127,6 +126,7 @@ my %__names = (
 	       ffphprll => 'fits_write_grphdrll',
 	       ffphtb => 'fits_write_atblhdr',
 	       ffphbn => 'fits_write_btblhdr',
+	       ffphext => 'fits_write_exthdr',
 	       ffpktp => 'fits_write_key_template',
 	       ffghsp => 'fits_get_hdrspace',
 	       ffghps => 'fits_get_hdrpos',
@@ -148,6 +148,8 @@ my %__names = (
 	       ffgkym => 'fits_read_key_dblcmp',
 	       ffgkyt => 'fits_read_key_triple',
 	       ffgkls => 'fits_read_key_longstr',
+	       ffhdr2str => 'fits_hdr2str',
+	       ffcnvthdr2str => 'fits_convert_hdr2str',
 	       ffgtdm => 'fits_read_tdim',
 	       ffgtdmll => 'fits_read_tdimll',
 	       ffdtdm => 'fits_decode_tdim',
@@ -222,6 +224,7 @@ my %__names = (
 	       ffgipr => 'fits_get_img_param',
 	       ffgiprll => 'fits_get_img_paramll',
 	       ffgidt => 'fits_get_img_type',
+	       ffinttyp => 'fits_get_inttype',
 	       ffgiet => 'fits_get_img_equivtype',
 	       ffgidm => 'fits_get_img_dim',
 	       ffgisz => 'fits_get_img_size',
@@ -245,6 +248,7 @@ my %__names = (
 	       ffcopy => 'fits_copy_hdu',
 	       ffcphd => 'fits_copy_header',
 	       ffcpdt => 'fits_copy_data',
+	       ffwrhdu => 'fits_write_hdu',
 	       ffrdef => 'fits_set_hdustruc',
 	       ffhdef => 'fits_set_hdrsize',
 	       ffpthp => 'fits_write_theap',
@@ -519,6 +523,7 @@ my %__names = (
 	       fficls => 'fits_insert_cols',
 	       ffdcol => 'fits_delete_col',
 	       ffcpcl => 'fits_copy_col',
+	       ffcprw => 'fits_copy_rows',
 	       ffmvec => 'fits_modify_vector_len',
 	       ffgics => 'fits_read_img_coord',
 	       ffgtcs => 'fits_read_tbl_coord',
@@ -606,6 +611,8 @@ my @__constants = qw(
 		     BYTE_IMG
 		     CASEINSEN
 		     CASESEN
+		     CFITSIO_MAJOR
+		     CFITSIO_MINOR
 		     COL_NOT_FOUND
 		     COL_NOT_UNIQUE
 		     COL_TOO_WIDE

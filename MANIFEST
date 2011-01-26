@@ -7,7 +7,6 @@ MANIFEST
 Makefile.PL
 NOTES
 README
-announce
 test.pl
 typemap
 util.c

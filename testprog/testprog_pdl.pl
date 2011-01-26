@@ -4,8 +4,21 @@ use strict;
 use blib;
 use Astro::FITS::CFITSIO qw( :longnames :constants );
 use PDL;
+use PDL::Core qw( howbig ); # for building the type translation table
 
 Astro::FITS::CFITSIO::PerlyUnpacking(0);
+
+my %types = type_table();
+
+# bug in PDL (error with pdl(longlong, [1,2,3]) even though all other
+# types are fine with this sytax) forces us to use a workaround
+# whereby we first copy the hash elements to scalar and then use those
+# scalars as methods
+
+my $tbyte = $types{TBYTE()};
+my $tshort = $types{TSHORT()};
+my $tint = $types{TINT()};
+my $tlong = $types{TLONG()};
 
 my $oskey='value_string';
 my $olkey=1;
@@ -21,13 +34,13 @@ my $ycoordtype = 'DEC--TAN';
 my $onskey = [ 'first string', 'second string', '        ' ];
 my $inclist = [ 'key*', 'newikys' ];
 my $exclist = [ 'key_pr*', 'key_pkls' ];
-my $onlkey = long [1,0,1]; # fits_write_key_log expects (int), though...
-my $onjkey = long [11,12,13];
+my $onlkey = pdl([1,0,1])->$tint; # fits_write_key_log expects int
+my $onjkey = pdl([11,12,13])->$tlong;
 my $onfkey = float [12.121212, 13.131313, 14.141414];
 my $onekey = float [13.131313, 14.141414, 15.151515];
 my $ongkey = double [14.1414141414141414, 15.1515151515151515,16.1616161616161616];
 my $ondkey = double [15.1515151515151515, 16.1616161616161616,17.1717171717171717];
-my $tbcol = long [1,17,28,43,56];
+my $tbcol = pdl([1,17,28,43,56])->$tlong;
 my $binname = "Test-BINTABLE";
 my $template = "testprog.tpt";
 my $tblname = "Test-ASCII";
@@ -77,7 +90,6 @@ $fptr=Astro::FITS::CFITSIO::create_file('!testprog.fit',$status);
 print "ffinit create new file status = $status\n";
 $status and goto ERRSTATUS;
 
-$filemode;
 $fptr->file_name($filename,$status);
 $fptr->file_mode($filemode,$status);
 print "Name of file = $filename, I/O mode = $filemode\n";
@@ -226,12 +238,12 @@ $fptr->write_key(TDOUBLE,'tdouble',$odkey,'tdouble comment',$status)
 $fptr->write_key_lng('BLANK',-99,'value to use for undefined pixels',$status)
 	and print "BLANK keyword status = $status\n";
 
-$boutarray = byte [1..$npixels+1];
-$ioutarray = short [1..$npixels+1];
-$koutarray = long [1..$npixels+1];
-$joutarray = long [1..$npixels+1];
-$eoutarray = float [1..$npixels+1];
-$doutarray = double [1..$npixels+1];
+$boutarray = sequence($types{TBYTE()}, $npixels+1)+1;
+$ioutarray = sequence($types{TSHORT()}, $npixels+1)+1;
+$koutarray = sequence($types{TINT()}, $npixels+1)+1;
+$joutarray = sequence($types{TLONG()}, $npixels+1)+1;
+$eoutarray = sequence(float, $npixels+1)+1;
+$doutarray = sequence(double, $npixels+1)+1;
 
 $fptr->write_img_byt(1,1,2,$boutarray->slice('0:1')->get_dataref,$status);
 $fptr->write_img_sht(1,5,2,$ioutarray->slice('4:5')->get_dataref,$status);
@@ -257,27 +269,27 @@ print "\nValues read back from primary array (99 = null pixel)\n";
 print "The 1st, and every 4th pixel should be undefined:\n";
 
 $anynull = 0;
-$binarray = zeroes($npixels)->byte;
+$binarray = zeroes($types{TBYTE()}, $npixels);
 $fptr->read_img_byt(1,1,$npixels,99,${$binarray->get_dataref},$anynull,$status);
 map printf(" %2d",$binarray->at($_)),(0..$npixels-1);
 print "  $anynull (ffgpvb)\n";
 
-$iinarray = zeroes($npixels)->short;
+$iinarray = zeroes($types{TSHORT()}, $npixels);
 $fptr->read_img_sht(1,1,$npixels,99,${$iinarray->get_dataref},$anynull,$status);
 map printf(" %2d",$iinarray->at($_)),(0..$npixels-1);
 print "  $anynull (ffgpvi)\n";
 
-$jinarray = zeroes($npixels)->long;
+$jinarray = zeroes($types{TLONG()}, $npixels);
 $fptr->read_img_lng(1,1,$npixels,99,${$jinarray->get_dataref},$anynull,$status);
 map printf(" %2d",$jinarray->at($_)),(0..$npixels-1);
 print "  $anynull (ffgpvj)\n";
 
-$einarray = zeroes($npixels)->float;
+$einarray = zeroes(float, $npixels);
 $fptr->read_img_flt(1,1,$npixels,99,${$einarray->get_dataref},$anynull,$status);
 map printf(" %2.0f",$einarray->at($_)),(0..$npixels-1);
 print "  $anynull (ffgpve)\n";
 
-$dinarray = zeroes($npixels)->double;
+$dinarray = zeroes(double, $npixels);
 $fptr->read_img_dbl(1,1,$npixels,99,${$dinarray->get_dataref},$anynull,$status);
 map printf(" %2.0d",$dinarray->at($_)),(0..$npixels-1);
 print "  $anynull (ffgpvd)\n";
@@ -285,7 +297,6 @@ print "  $anynull (ffgpvd)\n";
 $status and print("ERROR: ffgpv_ status = $status\n"), goto ERRSTATUS;
 $anynull or print "ERROR: ffgpv_ did not detect null values\n";
 
-$ii;
 for ($ii=3;$ii<$npixels;$ii+=4) {
 	$boutarray->set($ii,99);
 	$ioutarray->set($ii,99);
@@ -313,12 +324,12 @@ for ($ii=0; $ii<$npixels;$ii++) {
 		print "dout != din = ${\($doutarray->at($ii))} ${\($dinarray->at($ii))}\n";
 }
 
-$binarray = zeroes($npixels)->byte;
+$binarray = zeroes($types{TBYTE()}, $npixels);
 $larray = $binarray->copy;
-$iinarray = zeroes($npixels)->short;
-$jinarray = zeroes($npixels)->long;
-$einarray = zeroes($npixels)->float;
-$dinarray = zeroes($npixels)->double;
+$iinarray = zeroes($types{TSHORT()}, $npixels);
+$jinarray = zeroes($types{TLONG()}, $npixels);
+$einarray = zeroes(float, $npixels);
+$dinarray = zeroes(double, $npixels);
 
 $anynull = 0;
 
@@ -1056,7 +1067,7 @@ for ($ii=0;$ii<$tfields;$ii++) {
 	printf "%8s %8s %8s \n", $ttype->[$ii], $tform->[$ii], $tunit->[$ii];
 }
 
-$larray = zeroes(40)->byte;
+$larray = zeroes($types{TBYTE()}, 40);
 print "\nData values read from binary table:\n";
 printf "  Bit column (X) data values: \n\n";
 
@@ -1068,15 +1079,15 @@ for ($jj=0;$jj<5;$jj++) {
 	print " ";
 }
 
-$larray = zeroes($nrows)->byte;
-$xinarray = zeroes($nrows)->byte;
-$binarray = zeroes($nrows)->byte;
-$iinarray = zeroes($nrows)->short;
-$kinarray = zeroes($nrows)->long;
-$einarray = zeroes($nrows)->float;
-$dinarray = zeroes($nrows)->double;
-$cinarray = zeroes($nrows*2)->float;
-$minarray = zeroes($nrows*2)->double;
+$larray = zeroes($types{TBYTE()}, $nrows);
+$xinarray = zeroes($types{TBYTE()}, $nrows);
+$binarray = zeroes($types{TBYTE()}, $nrows);
+$iinarray = zeroes($types{TSHORT()}, $nrows);
+$kinarray = zeroes($types{TINT()}, $nrows);
+$einarray = zeroes(float, $nrows);
+$dinarray = zeroes(double, $nrows);
+$cinarray = zeroes(float, $nrows*2);
+$minarray = zeroes(double, $nrows*2);
 
 print "\n\n";
 
@@ -1107,12 +1118,12 @@ for ($ii=0;$ii<$nrows;$ii++) {
 }
 
 @tmp = (0..$nrows-1);
-$larray = byte \@tmp;
+$larray = pdl(\@tmp)->$tbyte;
 $larray2 = $larray->copy;
-$xinarray = byte \@tmp;
-$binarray = byte \@tmp;
-$iinarray = short \@tmp;
-$kinarray = long \@tmp;
+$xinarray = pdl(\@tmp)->$tbyte;
+$binarray = pdl(\@tmp)->$tbyte;
+$iinarray = pdl(\@tmp)->$tshort;
+$kinarray = pdl(\@tmp)->$tint;
 $einarray = float \@tmp;
 $dinarray = double \@tmp;
 @tmp = (0..2*$nrows-1);
@@ -1314,7 +1325,7 @@ $fptr->set_tscale(6,100.,100.,$status);
 #  write data to columns   #
 ############################
 
-$joutarray = long [0,1000,10000,32768,65535];
+$joutarray = pdl([0,1000,10000,32768,65535])->$tlong;
 
 for ($ii=4;$ii<7;$ii++) {
 	$fptr->write_col_lng($ii,1,1,5,$joutarray->get_dataref,$status);
@@ -1354,7 +1365,7 @@ $fptr->insert_img($bitpix,$naxis,$naxes,$status);
 print "\nCreate image extension: ffiimg status = $status\n";
 print "HDU number = ${\($fptr->get_hdu_num($hdunum))}\n";
 
-$imgarray = zeroes(19,30)->short;
+$imgarray = zeroes($types{TSHORT()}, 19,30);
 for ($jj=0;$jj<30;$jj++) {
 	for ($ii=0;$ii<19;$ii++) {
 		$imgarray->set($ii,$jj, ($ii<15) ? ($jj * 10) + $ii : 0 );;
@@ -1364,7 +1375,7 @@ for ($jj=0;$jj<30;$jj++) {
 $fptr->write_2d_sht(1,19,$naxes->[0],$naxes->[1],$imgarray->get_dataref,$status);
 print "\nWrote whole 2D array: ffp2di status = $status\n";
 
-$imgarray = zeroes(19,30)->short;
+$imgarray = zeroes($types{TSHORT()}, 19,30);
 $fptr->read_2d_sht(1,0,19,$naxes->[0],$naxes->[1],${$imgarray->get_dataref},$anynull,$status);
 print "\nRead whole 2D array: ffg2di status = $status\n";
 
@@ -1376,7 +1387,7 @@ for ($jj=0;$jj<30;$jj++) {
 	print "\n";
 }
 
-$imgarray2 = zeroes(10,20)->short;
+$imgarray2 = zeroes($types{TSHORT()}, 10,20);
 for ($jj=0;$jj<20;$jj++) {
 	for ($ii=0;$ii<10;$ii++) {
 		$imgarray2->set($ii,$jj, ($jj * -10) - $ii);
@@ -1388,7 +1399,7 @@ $lpixels = [14,14];
 $fptr->write_subset_sht(1,$naxis,$naxes,$fpixels,$lpixels,$imgarray2->get_dataref,$status);
 print "\nWrote subset 2D array: ffpssi status = $status\n";
 
-$imgarray = zeroes(19,30)->short;
+$imgarray = zeroes($types{TSHORT()}, 19,30);
 $fptr->read_2d_sht(1,0,19,$naxes->[0],$naxes->[1],${$imgarray->get_dataref},$anynull,$status);
 print "\nRead whole 2D array: ffg2di status = $status\n";
 
@@ -1404,7 +1415,7 @@ $fpixels = [2,5];
 $lpixels = [10,8];
 $inc = [2,3];
 
-$imgarray = zeroes(19,30)->short;
+$imgarray = zeroes($types{TSHORT()}, 19,30);
 
 $fptr->read_subset_sht(1,$naxis,$naxes,$fpixels,$lpixels,$inc,0,${$imgarray->get_dataref},$anynull,$status);
 print "\nRead subset of 2D array: ffgsvi status = $status\n";
@@ -1486,13 +1497,13 @@ $fptr->write_key_lng('TNULL6', 88, 'value for undefined pixels', $status);
 
 $iskey = 'abcdefghijklmnopqrst';
 
-$boutarray = byte [1..21];
-$ioutarray = short [1..21];
-$joutarray = long [1..21];
+$boutarray = pdl([1..21])->$tbyte;
+$ioutarray = pdl([1..21])->$tshort;
+$joutarray = pdl([1..21])->$tlong;
 $eoutarray = float [1..21];
 $doutarray = double [1..21];
 
-$larray = byte [0,1,0,0,1,1,0,0,0,1,1,1,0,0,0,0,1,1,1,1];
+$larray = pdl([0,1,0,0,1,1,0,0,0,1,1,1,0,0,0,0,1,1,1,1])->$tbyte;
 
 $inskey=[''];
 $fptr->write_col_str(1,1,1,1,$inskey,$status);
@@ -1513,7 +1524,7 @@ for ($ii=2;$ii<=20;$ii++) {
 	$fptr->write_col_null(2,$ii,$ii-1,1,$status);
 
 	$fptr->write_col_bit(3,$ii,1,$ii,$larray->get_dataref,$status);
-	
+
 	$fptr->write_col_byt(4,$ii,1,$ii,$boutarray->get_dataref,$status);
 	$fptr->write_col_null(4,$ii,$ii-1,1,$status);
 
@@ -1550,12 +1561,12 @@ $iskey = ' ';
 
 print "HDU number = ${\($fptr->get_hdu_num($hdunum))}\n";
 for ($ii=1;$ii<=20;$ii++) {
-	$larray = zeroes($ii)->byte;
-	$boutarray = zeroes($ii)->byte;
-	$ioutarray = zeroes($ii)->short;
-	$joutarray = zeroes($ii)->long;
-	$eoutarray = zeroes($ii)->float;
-	$doutarray = zeroes($ii)->double;
+	$larray = zeroes($types{TBYTE()}, $ii);
+	$boutarray = zeroes($types{TBYTE()}, $ii);
+	$ioutarray = zeroes($types{TSHORT()}, $ii);
+	$joutarray = zeroes($types{TLONG()}, $ii);
+	$eoutarray = zeroes(float, $ii);
+	$doutarray = zeroes(double, $ii);
 
 	$fptr->read_col_str(1,$ii,1,1,$iskey,$inskey,$anynull,$status);
 	print "A $inskey->[0] $status\nL";
@@ -1621,10 +1632,10 @@ $fptr->insert_img($bitpix,$naxis,$naxes,$status);
 print "\nffcrim status = $status\n";
 
 @tmp = map(($_*2),(0..$npixels-1));
-$boutarray = byte \@tmp;
-$ioutarray = short \@tmp;
-$koutarray = long \@tmp;
-$joutarray = long \@tmp;
+$boutarray = pdl(\@tmp)->$tbyte;
+$ioutarray = pdl(\@tmp)->$tshort;
+$koutarray = pdl(\@tmp)->$tint;
+$joutarray = pdl(\@tmp)->$tlong;
 $eoutarray = float \@tmp;
 $doutarray = double \@tmp;
 
@@ -1730,10 +1741,10 @@ $fptr->write_key_lng('EXTVER',$extvers,'extension version number',$status);
 $fptr->write_col(TSTRING,1,1,1,3,$onskey,$status);
 
 @tmp = map(($_*3),(0..$npixels-1));
-$boutarray = byte \@tmp;
-$ioutarray = short \@tmp;
-$koutarray = long \@tmp;
-$joutarray = long \@tmp;
+$boutarray = pdl(\@tmp)->$tbyte;
+$ioutarray = pdl(\@tmp)->$tshort;
+$koutarray = pdl(\@tmp)->$tint;
+$joutarray = pdl(\@tmp)->$tlong;
 $eoutarray = float \@tmp;
 $doutarray = double \@tmp;
 
@@ -1886,5 +1897,31 @@ ERRSTATUS: {
 
 	fits_get_errstatus($status,$errmsg);
 	print "\nStatus = $status: $errmsg\n";
+
+}
+
+sub type_table {
+
+  my %table;
+
+  my (@pdl_types, @cfitsio_types);
+
+  # unsigned type routines are not tested in this program, so we only
+  # need to handle the signed types
+
+  @pdl_types = (byte, short, long, longlong);
+  @cfitsio_types = ( TBYTE, TSHORT, TINT, TLONG, TLONGLONG );
+
+ CFITSIO_TYPES:
+  for my $cfitsio_type ( @cfitsio_types ) {
+    for my $ptype (@pdl_types) {
+      howbig($ptype) == Astro::FITS::CFITSIO::sizeof_datatype($cfitsio_type)
+	and $table{$cfitsio_type} = $ptype, next CFITSIO_TYPES;
+    }
+
+    die "could not find a matching PDL type for cfitsio type $cfitsio_type";
+  }
+
+  return %table;
 
 }

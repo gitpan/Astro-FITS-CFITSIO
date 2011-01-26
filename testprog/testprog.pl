@@ -74,7 +74,6 @@ ffinit($fptr,'!testprog.fit',$status);
 print "ffinit create new file status = $status\n";
 $status and goto ERRSTATUS;
 
-$filemode;
 ffflnm($fptr,$filename,$status);
 ffflmd($fptr,$filemode,$status);
 print "Name of file = $filename, I/O mode = $filemode\n";
