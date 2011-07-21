@@ -1,5 +1,5 @@
 package Astro::FITS::CFITSIO;
-$VERSION = '1.06';
+$VERSION = '1.07';
 
 use strict;
 use Carp;
@@ -137,6 +137,8 @@ my %__names = (
 	       ffgcrd => 'fits_read_card',
 	       ffgunt => 'fits_read_key_unit',
 	       ffgkyn => 'fits_read_keyn',
+	       ffgstr => 'fits_read_str',
+	       ffdstr => 'fits_delete_str',
 	       ffgky => 'fits_read_key',
 	       ffgkey => 'fits_read_keyword',
 	       ffgkys => 'fits_read_key_str',
@@ -148,6 +150,7 @@ my %__names = (
 	       ffgkym => 'fits_read_key_dblcmp',
 	       ffgkyt => 'fits_read_key_triple',
 	       ffgkls => 'fits_read_key_longstr',
+	       fffree => 'fits_free_memory',
 	       ffhdr2str => 'fits_hdr2str',
 	       ffcnvthdr2str => 'fits_convert_hdr2str',
 	       ffgtdm => 'fits_read_tdim',
@@ -360,7 +363,6 @@ my %__names = (
 	       ffgsfk => 'fits_read_subsetnull_int',
 	       ffgsfe => 'fits_read_subsetnull_flt',
 	       ffgsfd => 'fits_read_subsetnull_dbl',
-	       fits_comp_img => 'fits_compress_img',
 	       fits_decomp_img => 'fits_decompress_img',
 	       ffgcv => 'fits_read_col',
 	       ffgcf => 'fits_read_colnull',
@@ -1185,21 +1187,33 @@ FIXME
 
 =head1 AUTHOR
 
-Pete Ratzlaff <pratzlaff@cfa.harvard.edu>, with a great deal of code taken
-from Karl Glazebrook's PGPLOT module.
+Pete Ratzlaff E<lt>pratzlaff@cfa.harvard.eduE<gt>, with a great deal
+of code taken from Karl Glazebrook's PGPLOT module.
 
 Contributors include:
 
 =over 4
 
-=item Tim Jenness <t.jenness@jach.hawaii.edu>
+=item Diab Jerius, E<lt>djerius@cpan.orgE<gt>
+
+general improvements
+
+=item Tim Jenness, E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 convenience routines
 
-=item Tim Conrow <tim@ipac.caltech.edu>
+=item Tim Conrow, E<lt>tim@ipac.caltech.eduE<gt>
 
 function implementations, bug fixes
 
 =back
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2002,2004,2006,2011 by the Smithsonian Astrophysical
+Observatory.
+
+This software is released under the same terms as Perl. A copy of the
+Perl license may be obtained at http://dev.perl.org/licenses/
 
 =cut

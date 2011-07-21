@@ -1,4 +1,15 @@
-2011-01-26  Pete Ratzlaff  <rpete@legs.cfa.harvard.edu>
+2011-07-21  Pete Ratzlaff  <rpete@cfa.harvard.edu>
+
+	* CFITSIO.pm: $VERSION = '1.07';
+
+	* CFITSIO.xs: update to cfitsio 3.28, removal of
+	fits_compress_img. Removal of LICENSE file and inclusion of
+	copyright and license in README.
+
+2011-07-21  Pete Ratzlaff  <rpete@cfa.harvard.edu>
+
+	* CFITSIO.xs: update to cfitsio 3.27, added fits_free_memory,
+	fits_read_str, fits_delete_str
 
 2011-01-26  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
 

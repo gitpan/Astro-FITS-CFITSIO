@@ -13,7 +13,7 @@ Where can (did) I get it?
 
 What version of cfitsio does this module require?
 ----------------------------------------------
-  Astro::FITS::CFITSIO version 1.06 requires at least cfitsio version 3.26
+  Astro::FITS::CFITSIO version 1.07 requires at least cfitsio version 3.28
 
 Installation
 ------------
@@ -26,8 +26,14 @@ Installation
      $ make test
      $ make install
 
-Acknowledgement
----------------
-   m51.fits is included as a demonstration by kind permission of the
-   IRAF group at the National Optical and Astronomical Observatories,
-   in particular Pat Seitzer, who retain ownership.
+Copyright and License
+---------------------
+   Copyright (C) 2002,2004,2006,2011 by the Smithsonian Astrophysical
+   Observatory.
+
+   This software is released under the same terms as Perl. A copy of
+   the Perl license may be obtained at http://dev.perl.org/licenses/
+
+   The demonstration image m51.fits.gz is derived from the Hubble
+   Heritage project archival images; its creation was funded in part
+   by a grant from NASA. The image is in the public domain.

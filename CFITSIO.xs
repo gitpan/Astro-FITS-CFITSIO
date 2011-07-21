@@ -1581,21 +1581,6 @@ ffcmph(fptr,status)
 		status
 
 int
-fits_comp_img(infptr,outfptr,comptype,tilesize,blocksize,noisebits,status)
-	fitsfile * infptr
-	fitsfile * outfptr
-	int comptype
-	long * tilesize
-	int blocksize
-	int noisebits
-	int &status
-	ALIAS:
-		Astro::FITS::CFITSIO::fits_compress_img = 1
-		fitsfilePtr::compress_img = 2
-	OUTPUT:
-		status
-
-int
 ffcpcl(infptr,outfptr,incolnum,outcolnum,create_col,status)
 	fitsfile * infptr
 	fitsfile * outfptr
@@ -7503,6 +7488,30 @@ ffgpfd(fptr,group,felem,nelem,array,nularray,anynul,status)
 		RETVAL
 
 int
+ffgstr(fptr, string, card, status)
+	fitsfile * fptr
+	char * string
+	char * card = NO_INIT
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_read_str = 1
+		fitsfilePtr::read_str = 2
+	OUTPUT:
+		card
+		status
+
+int
+ffdstr(fptr, string, status)
+	fitsfile * fptr
+	char * string
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_delete_str = 1
+		fitsfilePtr::delete_str = 2
+	OUTPUT:
+		status
+
+int
 ffgky(fptr,datatype,keyname,value,comment,status)
 	fitsfile * fptr
 	int datatype
@@ -7589,6 +7598,17 @@ ffgkls(fptr,keyname,longstr,comment,status)
 		comment
 		status
 		RETVAL
+
+int
+fffree(fptr, value, status)
+	fitsfile * fptr
+	char * value
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_free_memory = 1
+		fitsfilePtr::read_free_memory = 2
+	OUTPUT:
+		status
 
 int
 ffgkys(fptr,keyname,value,comment,status)

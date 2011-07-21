@@ -1,24 +1,23 @@
-NOTE: Astro::FITS::CFITSIO v1.05 requires cfitsio library version
-      3.006 or later. It can be obtained from
+NOTE: Astro::FITS::CFITSIO v1.07 requires cfitsio library version
+      3.28 or later. It can be obtained from
       http://heasarc.gsfc.nasa.gov/fitsio
 
 NOTE: gcc takes a very long time to compile CFITSIO.c (created from
-      CFITSIO.xs) with -O2 optimization on ix86. With -O, it takes
+      CFITSIO.xs) with -O2 optimization on ix86. With -O0, it takes
       about one tenth the time. This is the explanation for the
-      optimization flag below. Use whatever flag you want, of
-      course...
+      optimization flag below.
 
 1. Set the CFITSIO environment variable pointing to the location of
    your cfitsio library and headers (e.g., /usr/local/cfitsio), or a
    prefix with include and lib subdirectories containing the cfitsio
    headers and library, respectively (e.g., /usr/local).
 
-   $ CFITSIO=/usr/local/cfitsio         # Bourne shell and friends
+   $ CFITSIO=/usr/local/cfitsio         # Bourne shell and variants
    $ export CFITSIO
 
    % setenv CFITSIO /usr/local/cfitsio  # C shell variants
 
-2. perl Makefile.PL OPTIMIZE=-O
+2. perl Makefile.PL OPTIMIZE=-O0
 
 3. make
 
