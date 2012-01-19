@@ -1,5 +1,5 @@
 package Astro::FITS::CFITSIO;
-$VERSION = '1.07';
+$VERSION = '1.08';
 
 use strict;
 use Carp;
@@ -529,6 +529,7 @@ my %__names = (
 	       ffmvec => 'fits_modify_vector_len',
 	       ffgics => 'fits_read_img_coord',
 	       ffgtcs => 'fits_read_tbl_coord',
+	       ffgicsa => 'fits_read_img_coord_version',
 	       ffwldp => 'fits_pix_to_world',
 	       ffxypx => 'fits_world_to_pix',
 	       ffgiwcs => 'fits_get_image_wcs_keys',

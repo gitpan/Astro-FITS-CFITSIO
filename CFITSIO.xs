@@ -1507,6 +1507,37 @@ ffcrow(fptr,datatype,expr,firstrow,nelements,nulval,array,anynul,status)
 		RETVAL
 
 int
+ffcalc(infptr, expr, outfptr, parName, parInfo, status)
+	fitsfile * infptr
+	char * expr
+	fitsfile * outfptr
+	char * parName
+	char * parInfo
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_calculator = 1
+		fitsfilePtr::calculator = 2
+	OUTPUT:
+		status
+
+int
+ffcalc_rng(infptr, expr, outfptr, parName, parInfo, nranges, firstrow, lastrow, status)
+	fitsfile * infptr
+	char * expr
+	fitsfile * outfptr
+	char * parName
+	char * parInfo
+	int nranges
+	long * firstrow
+	long * lastrow
+	int &status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_calculator_rng = 1
+		fitsfilePtr::calculator_rng = 2
+	OUTPUT:
+		status
+
+int
 ffgtch(gfptr,grouptype,status)
 	fitsfile * gfptr
 	int grouptype
@@ -6605,6 +6636,37 @@ ffgics(fptr,xrefval,yrefval,xrefpix,yrefpix,xinc,yinc,rot,coordtype,status)
 		if (ST(5) != &PL_sv_undef) sv_setnv(ST(5),xinc);
 		if (ST(6) != &PL_sv_undef) sv_setnv(ST(6),yinc);
 		if (ST(7) != &PL_sv_undef) sv_setnv(ST(7),rot);
+	OUTPUT:
+		coordtype
+		status
+		RETVAL
+
+int
+ffgicsa(fptr,version,xrefval,yrefval,xrefpix,yrefpix,xinc,yinc,rot,coordtype,status)
+	fitsfile * fptr
+	char version
+	double xrefval = NO_INIT
+	double yrefval = NO_INIT
+	double xrefpix = NO_INIT
+	double yrefpix = NO_INIT
+	double xinc = NO_INIT
+	double yinc = NO_INIT
+	double rot = NO_INIT
+	char * coordtype = NO_INIT
+	int status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_read_img_coord_version = 1
+		fitsfilePtr::read_img_coord_version = 2
+	CODE:
+		coordtype = get_mortalspace(FLEN_VALUE,TBYTE);
+		RETVAL=ffgics(fptr,&xrefval,&yrefval,&xrefpix,&yrefpix,&xinc,&yinc,&rot,coordtype,&status);
+		if (ST(2) != &PL_sv_undef) sv_setnv(ST(2),xrefval);
+		if (ST(3) != &PL_sv_undef) sv_setnv(ST(3),yrefval);
+		if (ST(4) != &PL_sv_undef) sv_setnv(ST(4),xrefpix);
+		if (ST(5) != &PL_sv_undef) sv_setnv(ST(5),yrefpix);
+		if (ST(6) != &PL_sv_undef) sv_setnv(ST(6),xinc);
+		if (ST(7) != &PL_sv_undef) sv_setnv(ST(7),yinc);
+		if (ST(8) != &PL_sv_undef) sv_setnv(ST(8),rot);
 	OUTPUT:
 		coordtype
 		status

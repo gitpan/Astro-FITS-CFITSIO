@@ -1,4 +1,15 @@
-2011-07-21  Pete Ratzlaff  <rpete@cfa.harvard.edu>
+2012-01-19  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.pm: $VERSION = '1.08';
+
+	* CFITSIO.xs: sync with cfitsio 3.29, added fits_calculator,
+	fits_calculator_rng and fits_read_img_coord_version ffgicsa,
+
+2011-10-21  Diab Jerius  <djerius@cfa.harvard.edu>
+
+	* Makefile.PL: pkg-config support
+
+2011-07-21  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
 
 	* CFITSIO.pm: $VERSION = '1.07';
 
@@ -6,7 +17,7 @@
 	fits_compress_img. Removal of LICENSE file and inclusion of
 	copyright and license in README.
 
-2011-07-21  Pete Ratzlaff  <rpete@cfa.harvard.edu>
+2011-07-21  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
 
 	* CFITSIO.xs: update to cfitsio 3.27, added fits_free_memory,
 	fits_read_str, fits_delete_str
