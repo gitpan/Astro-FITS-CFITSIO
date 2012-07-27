@@ -1,5 +1,5 @@
 package Astro::FITS::CFITSIO;
-$VERSION = '1.08';
+$VERSION = '1.09';
 
 use strict;
 use Carp;

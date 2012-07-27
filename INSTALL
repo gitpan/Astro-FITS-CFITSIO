@@ -1,5 +1,5 @@
-NOTE: Astro::FITS::CFITSIO v1.08 requires cfitsio library version
-      3.29 or later. It can be obtained from
+NOTE: Astro::FITS::CFITSIO v1.09 requires cfitsio library version
+      3.31 or later. It can be obtained from
       http://heasarc.gsfc.nasa.gov/fitsio
 
 NOTE: gcc takes a very long time to compile CFITSIO.c (created from

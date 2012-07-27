@@ -11,6 +11,14 @@ extern "C" {
 #include "fitsio.h"
 #include "util.h"
 
+/* use the C std lib malloc/free */
+#ifdef malloc
+#undef malloc
+#endif
+#ifdef free
+#undef free
+#endif
+
 static int
 not_here(s)
 char *s;
@@ -7662,9 +7670,8 @@ ffgkls(fptr,keyname,longstr,comment,status)
 		RETVAL
 
 int
-fffree(fptr, value, status)
-	fitsfile * fptr
-	char * value
+fffree(value, status)
+	void * value
 	int &status
 	ALIAS:
 		Astro::FITS::CFITSIO::fits_free_memory = 1

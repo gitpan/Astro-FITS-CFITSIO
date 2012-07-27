@@ -1,9 +1,15 @@
+2012-07-27  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.pm: $VERSION = '1.09';
+
+	* CFITSIO.xs: sync with cfitsio 3.31
+
 2012-01-19  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
 
 	* CFITSIO.pm: $VERSION = '1.08';
 
 	* CFITSIO.xs: sync with cfitsio 3.29, added fits_calculator,
-	fits_calculator_rng and fits_read_img_coord_version ffgicsa,
+	fits_calculator_rng and fits_read_img_coord_version/ffgicsa
 
 2011-10-21  Diab Jerius  <djerius@cfa.harvard.edu>
 
