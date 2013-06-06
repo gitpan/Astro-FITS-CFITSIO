@@ -1,3 +1,13 @@
+2013-06-06  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.pm: $VERSION = '1.10';
+
+	* CFITSIO.pm: sync with cfitsio 3.34, added fits_make_key/ffmky
+
+2012-08-06  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
+
+	* CFITSIO.xs: added fits_parse_input_filename/ffifile
+
 2012-07-27  Pete Ratzlaff  <pratzlaff@cfa.harvard.edu>
 
 	* CFITSIO.pm: $VERSION = '1.09';

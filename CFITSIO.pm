@@ -1,5 +1,5 @@
 package Astro::FITS::CFITSIO;
-$VERSION = '1.09';
+$VERSION = '1.10';
 
 use strict;
 use Carp;
@@ -28,6 +28,7 @@ my @__names_no_short = qw(
 
 my %__names = (
 	       ffiurl => 'fits_parse_input_url',
+	       ffifile => 'fits_parse_input_filename',
 	       ffrtnm => 'fits_parse_rootname',
 	       ffrwrg => 'fits_parse_range',
 	       ffrwrgll => 'fits_parse_rangell',
@@ -71,6 +72,7 @@ my %__names = (
 	       ffnchk => 'fits_null_check',
 	       ffkeyn => 'fits_make_keyn',
 	       ffnkey => 'fits_make_nkey',
+	       ffmkky => 'fits_make_key',
 	       ffgkcl => 'fits_get_keyclass',
 	       ffdtyp => 'fits_get_keytype',
 	       ffpsvc => 'fits_parse_value',

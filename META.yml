@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Astro-FITS-CFITSIO
-version:            1.09
+version:            1.10
 abstract:           ~
 author:  []
 license:            unknown

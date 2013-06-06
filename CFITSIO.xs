@@ -3252,6 +3252,23 @@ ffnkey(value,keyroot,keyname,status)
 		RETVAL
 
 int
+ffmkky(keyname, value, comm, card, status)
+	const char * keyname
+	char * value
+	const char * comm
+	char * card = NO_INIT
+	int status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_make_key = 1
+	CODE:
+		card = get_mortalspace(FLEN_CARD, TBYTE);
+		RETVAL=ffmkky(keyname, value, comm, card, &status);
+	OUTPUT:
+		card
+		status
+		RETVAL
+
+int
 ffgtmg(infptr,outfptr,mgopt,status)
 	fitsfile * infptr
 	fitsfile * outfptr
@@ -3750,6 +3767,42 @@ ffiurl(filename,urltype,infile,outfile,extspec,filter,binspec,colspec,status)
 		filter
 		binspec
 		colspec
+		status
+		RETVAL
+
+int
+ffifile(filename,filetype,infile,outfile,extspec,filter,binspec,colspec,pixspec,status)
+	char * filename
+	char * filetype = NO_INIT
+	char * infile = NO_INIT
+	char * outfile = NO_INIT
+	char * extspec = NO_INIT
+	char * filter = NO_INIT
+	char * binspec = NO_INIT
+	char * colspec = NO_INIT
+	char * pixspec = NO_INIT
+	int status
+	ALIAS:
+		Astro::FITS::CFITSIO::fits_parse_input_filename = 1
+	CODE:
+		filetype = get_mortalspace(FLEN_FILENAME,TBYTE);
+		infile = get_mortalspace(FLEN_FILENAME,TBYTE);
+		outfile = get_mortalspace(FLEN_FILENAME,TBYTE);
+		extspec = get_mortalspace(FLEN_FILENAME,TBYTE);
+		filter = get_mortalspace(FLEN_FILENAME,TBYTE);
+		binspec = get_mortalspace(FLEN_FILENAME,TBYTE);
+		colspec = get_mortalspace(FLEN_FILENAME,TBYTE);
+		pixspec = get_mortalspace(FLEN_FILENAME,TBYTE);
+		RETVAL = ffifile(filename,filetype,infile,outfile,extspec,filter,binspec,colspec,pixspec,&status);
+	OUTPUT:
+		filetype
+		infile
+		outfile
+		extspec
+		filter
+		binspec
+		colspec
+		pixspec
 		status
 		RETVAL
 
